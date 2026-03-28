@@ -1,0 +1,54 @@
+server:
+  bind_addr: "0.0.0.0:8080"
+  trust_x_forwarded_for: false
+  environment: "production"
+
+proxy:
+  upstream_base_url: "http://upstream-service:8081"
+  connect_timeout_secs: 3
+  request_timeout_secs: 15
+  pool_idle_timeout_secs: 60
+  max_body_bytes: 1048576
+
+security:
+  blocked_methods:
+    - "TRACE"
+    - "CONNECT"
+  request_id_header: "x-request-id"
+  inspect_headers: true
+  inspect_query_string: true
+  inspect_body: true
+  max_inspection_body_bytes: 32768
+  temp_ban_secs: 900
+  temp_suspicious_secs: 300
+  rate_limit:
+    requests_per_window: 120
+    window_secs: 60
+  rule_modes:
+    method.disallowed: block
+    path.traversal.basic: block
+    sqli.basic: block
+    xss.basic: block
+    cmdi.basic: block
+    ssrf.basic: recommend
+    evasion.encoding: recommend
+    header.crlf: block
+    smuggling.cl_te: recommend
+    auth.missing_api_key: block
+    auth.invalid_api_key: block
+    body.sqli.basic: block
+    body.xss.basic: block
+    body.cmdi.basic: block
+    rate_limit.exceeded: block
+
+telemetry:
+  log_level: "info"
+
+auth:
+  enabled: true
+  header_name: "x-api-key"
+  api_keys:
+    - "replace-me-in-production"
+  protected_path_prefixes:
+    - "/admin"
+    - "/internal"

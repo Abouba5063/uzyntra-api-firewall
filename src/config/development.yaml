@@ -1,0 +1,28 @@
+server:
+  bind_addr: "127.0.0.1:8080"
+  trust_x_forwarded_for: false
+  environment: "development"
+
+proxy:
+  upstream_base_url: "https://httpbin.org"
+  connect_timeout_secs: 5
+  request_timeout_secs: 20
+  pool_idle_timeout_secs: 30
+  max_body_bytes: 1048576
+
+security:
+  blocked_methods:
+    - "TRACE"
+    - "CONNECT"
+  request_id_header: "x-request-id"
+  inspect_headers: true
+  inspect_query_string: true
+  inspect_body: false
+  temp_ban_secs: 900
+  temp_suspicious_secs: 300
+  rate_limit:
+    requests_per_window: 60
+    window_secs: 60
+
+telemetry:
+  log_level: "info"

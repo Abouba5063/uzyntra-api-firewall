@@ -1,0 +1,63 @@
+server:
+  bind_addr: "127.0.0.1:8080"
+  trust_x_forwarded_for: false
+  environment: "development"
+
+proxy:
+  upstream_base_url: "https://httpbin.org"
+  connect_timeout_secs: 5
+  request_timeout_secs: 20
+  pool_idle_timeout_secs: 30
+  max_body_bytes: 1048576
+
+security:
+  blocked_methods:
+    - "TRACE"
+    - "CONNECT"
+  request_id_header: "x-request-id"
+  inspect_headers: true
+  inspect_query_string: true
+  inspect_body: true
+  max_inspection_body_bytes: 32768
+  temp_ban_secs: 900
+  temp_suspicious_secs: 300
+  suspicious_score_threshold: 12
+  rate_limit:
+    requests_per_window: 60
+    window_secs: 60
+  rule_modes:
+    method.disallowed: block
+    path.traversal.basic: block
+    sqli.basic: block
+    xss.basic: block
+    cmdi.basic: block
+    ssrf.basic: recommend
+    evasion.encoding: recommend
+    header.crlf: block
+    smuggling.cl_te: recommend
+    auth.missing_api_key: block
+    auth.invalid_api_key: block
+    body.sqli.basic: block
+    body.xss.basic: block
+    body.cmdi.basic: block
+    rate_limit.exceeded: block
+  route_overrides:
+    - path_prefix: "/proxy/get"
+      rule_modes:
+        ssrf.basic: detect_only
+    - path_prefix: "/proxy/post"
+      rule_modes:
+        body.sqli.basic: block
+        body.xss.basic: block
+
+telemetry:
+  log_level: "info"
+
+auth:
+  enabled: true
+  header_name: "x-api-key"
+  api_keys:
+    - "dev-secret-key-1"
+  protected_path_prefixes:
+    - "/proxy/anything/protected"
+    - "/proxy/post"
