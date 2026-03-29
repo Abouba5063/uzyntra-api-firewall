@@ -17,13 +17,21 @@ pub async fn root() -> Json<Value> {
     Json(json!({
         "service": "api_firewall",
         "status": "running",
-        "message": "Rust API Firewall is up"
+        "message": "Rust API Firewall public plane is up"
     }))
 }
 
-pub async fn healthz() -> Json<Value> {
+pub async fn public_healthz() -> Json<Value> {
     Json(json!({
-        "status": "ok"
+        "status": "ok",
+        "plane": "public"
+    }))
+}
+
+pub async fn admin_healthz() -> Json<Value> {
+    Json(json!({
+        "status": "ok",
+        "plane": "admin"
     }))
 }
 
@@ -161,6 +169,14 @@ pub async fn unblock_ip(
         Ok(parsed) => {
             let removed = state.mitigation_store.unblock_ip(parsed);
 
+            if removed {
+                if let Err(err) =
+                    storage::delete_active_mitigation(&state.config.storage.sqlite_path, &parsed.to_string())
+                {
+                    tracing::error!(error = %err, "failed to delete active mitigation from SQLite");
+                }
+            }
+
             let audit = AdminAudit {
                 timestamp: Utc::now(),
                 actor,
@@ -224,6 +240,24 @@ pub async fn recent_audits(
         Ok(items) => Json(json!({
             "count": items.len(),
             "items": items
+        })),
+        Err(err) => Json(json!({
+            "error": err.to_string()
+        })),
+    }
+}
+
+pub async fn metrics(State(state): State<AppState>) -> Json<Value> {
+    match storage::metrics_snapshot(&state.config.storage.sqlite_path) {
+        Ok(metrics) => Json(json!({
+            "public_bind_addr": state.config.server.public_bind_addr,
+            "admin_bind_addr": state.config.server.admin_bind_addr,
+            "active_temp_blocks": state.mitigation_store.active_block_count(),
+            "reputation_entries": state.mitigation_store.list_reputations().len(),
+            "total_events": metrics.total_events,
+            "blocked_events": metrics.blocked_events,
+            "total_audits": metrics.total_audits,
+            "latest_rule_ids": metrics.latest_rule_ids
         })),
         Err(err) => Json(json!({
             "error": err.to_string()

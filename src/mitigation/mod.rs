@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    net::IpAddr,
-};
+use std::{collections::HashMap, net::IpAddr};
 
 use axum::{
     body::Body,
@@ -9,12 +6,15 @@ use axum::{
 };
 use chrono::{DateTime, Duration, Utc};
 use dashmap::DashMap;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::types::{
-    AppState, DecisionOutcome, MitigationAction, OperatorActionCommand, OperatorActionKind,
-    Recommendation, RequestContext, SecurityDecision, SourceReputation,
+use crate::{
+    storage,
+    types::{
+        AppState, DecisionOutcome, MitigationAction, OperatorActionCommand, OperatorActionKind,
+        Recommendation, RequestContext, SecurityDecision, SourceReputation,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -67,7 +67,7 @@ impl TemporaryMitigationStore {
         mitigation
     }
 
-    pub fn cleanup_expired(&self) -> usize {
+    pub fn cleanup_expired(&self) -> Vec<IpAddr> {
         let now = Utc::now();
         let expired: Vec<IpAddr> = self
             .blocks
@@ -81,13 +81,11 @@ impl TemporaryMitigationStore {
             })
             .collect();
 
-        let count = expired.len();
-
-        for ip in expired {
-            self.blocks.remove(&ip);
+        for ip in &expired {
+            self.blocks.remove(ip);
         }
 
-        count
+        expired
     }
 
     pub fn active_block_count(&self) -> usize {
@@ -166,6 +164,22 @@ impl TemporaryMitigationStore {
             })
             .collect()
     }
+
+    pub fn insert_block_hydrated(&self, mitigation: ActiveMitigation) {
+        self.blocks.insert(mitigation.source_ip, mitigation);
+    }
+
+    pub fn insert_reputation_hydrated(&self, reputation: SourceReputation) {
+        if let Ok(ip) = reputation.source_ip.parse::<IpAddr>() {
+            self.reputation.insert(
+                ip,
+                SourceReputationEntry {
+                    suspicious_score: reputation.suspicious_score,
+                    last_seen_at: reputation.last_seen_at,
+                },
+            );
+        }
+    }
 }
 
 pub fn finalize_blocking_decision(
@@ -175,11 +189,15 @@ pub fn finalize_blocking_decision(
 ) -> Response<Body> {
     let reputation_delta = calculate_reputation_delta(&decision);
     let reputation = if reputation_delta > 0 {
-        Some(
-            state
-                .mitigation_store
-                .add_suspicious_score(context.source_ip, reputation_delta),
-        )
+        let rep = state
+            .mitigation_store
+            .add_suspicious_score(context.source_ip, reputation_delta);
+
+        if let Err(err) = storage::upsert_reputation(&state.config.storage.sqlite_path, &rep) {
+            error!(error = %err, "failed to persist reputation");
+        }
+
+        Some(rep)
     } else {
         None
     };
@@ -192,6 +210,12 @@ pub fn finalize_blocking_decision(
                     *ttl_secs,
                     decision.summary.clone(),
                 );
+
+                if let Err(err) =
+                    storage::upsert_active_mitigation(&state.config.storage.sqlite_path, &mitigation)
+                {
+                    error!(error = %err, "failed to persist active mitigation");
+                }
 
                 warn!(
                     request_id = %context.request_id,
@@ -217,6 +241,12 @@ pub fn finalize_blocking_decision(
                     reputation.suspicious_score
                 ),
             );
+
+            if let Err(err) =
+                storage::upsert_active_mitigation(&state.config.storage.sqlite_path, &mitigation)
+            {
+                error!(error = %err, "failed to persist threshold-based active mitigation");
+            }
 
             warn!(
                 request_id = %context.request_id,
@@ -262,6 +292,10 @@ pub fn apply_non_blocking_effects(state: &AppState, context: &RequestContext, de
     if delta > 0 {
         let reputation = state.mitigation_store.add_suspicious_score(context.source_ip, delta);
 
+        if let Err(err) = storage::upsert_reputation(&state.config.storage.sqlite_path, &reputation) {
+            error!(error = %err, "failed to persist reputation");
+        }
+
         if reputation.suspicious_score >= state.config.security.suspicious_score_threshold {
             let mitigation = state.mitigation_store.block_ip_for(
                 context.source_ip,
@@ -271,6 +305,12 @@ pub fn apply_non_blocking_effects(state: &AppState, context: &RequestContext, de
                     reputation.suspicious_score
                 ),
             );
+
+            if let Err(err) =
+                storage::upsert_active_mitigation(&state.config.storage.sqlite_path, &mitigation)
+            {
+                error!(error = %err, "failed to persist threshold-based active mitigation");
+            }
 
             warn!(
                 request_id = %context.request_id,

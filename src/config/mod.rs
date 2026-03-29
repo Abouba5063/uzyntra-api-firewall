@@ -15,7 +15,8 @@ pub struct AppConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
-    pub bind_addr: String,
+    pub public_bind_addr: String,
+    pub admin_bind_addr: String,
     pub trust_x_forwarded_for: bool,
     pub environment: String,
 }
@@ -118,8 +119,12 @@ impl AppConfig {
         let mut config: AppConfig = serde_yaml::from_str(&raw)
             .with_context(|| format!("failed parsing YAML config: {}", config_path.display()))?;
 
-        if let Ok(bind_addr) = env::var("FIREWALL_BIND_ADDR") {
-            config.server.bind_addr = bind_addr;
+        if let Ok(public_bind_addr) = env::var("FIREWALL_PUBLIC_BIND_ADDR") {
+            config.server.public_bind_addr = public_bind_addr;
+        }
+
+        if let Ok(admin_bind_addr) = env::var("FIREWALL_ADMIN_BIND_ADDR") {
+            config.server.admin_bind_addr = admin_bind_addr;
         }
 
         if let Ok(upstream) = env::var("UPSTREAM_BASE_URL") {

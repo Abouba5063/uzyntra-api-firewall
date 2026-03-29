@@ -2,9 +2,16 @@ use std::{fs, path::Path};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{
+    params, params_from_iter,
+    types::Value as SqlValue,
+    Connection,
+};
 
-use crate::types::{AdminAudit, AuditSearchFilters, EventSearchFilters, SecurityEvent, Severity};
+use crate::{
+    mitigation::ActiveMitigation,
+    types::{AdminAudit, AuditSearchFilters, EventSearchFilters, SecurityEvent, SourceReputation, Severity},
+};
 
 pub fn init_db(sqlite_path: &str) -> Result<()> {
     ensure_parent_dir(sqlite_path)?;
@@ -32,12 +39,18 @@ pub fn init_db(sqlite_path: &str) -> Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_security_events_timestamp
             ON security_events(timestamp DESC);
-
         CREATE INDEX IF NOT EXISTS idx_security_events_source_ip
             ON security_events(source_ip);
-
         CREATE INDEX IF NOT EXISTS idx_security_events_request_id
             ON security_events(request_id);
+        CREATE INDEX IF NOT EXISTS idx_security_events_rule_ids
+            ON security_events(rule_ids);
+        CREATE INDEX IF NOT EXISTS idx_security_events_highest_severity
+            ON security_events(highest_severity);
+        CREATE INDEX IF NOT EXISTS idx_security_events_method
+            ON security_events(method);
+        CREATE INDEX IF NOT EXISTS idx_security_events_path
+            ON security_events(path);
 
         CREATE TABLE IF NOT EXISTS admin_audits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,12 +65,31 @@ pub fn init_db(sqlite_path: &str) -> Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_admin_audits_timestamp
             ON admin_audits(timestamp DESC);
-
         CREATE INDEX IF NOT EXISTS idx_admin_audits_actor
             ON admin_audits(actor);
-
         CREATE INDEX IF NOT EXISTS idx_admin_audits_action
             ON admin_audits(action);
+        CREATE INDEX IF NOT EXISTS idx_admin_audits_target
+            ON admin_audits(target);
+
+        CREATE TABLE IF NOT EXISTS active_mitigations (
+            source_ip TEXT PRIMARY KEY,
+            action_id TEXT NOT NULL,
+            action_type TEXT NOT NULL,
+            ttl_secs INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            reason TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_active_mitigations_expires_at
+            ON active_mitigations(expires_at);
+
+        CREATE TABLE IF NOT EXISTS reputations (
+            source_ip TEXT PRIMARY KEY,
+            suspicious_score INTEGER NOT NULL,
+            last_seen_at TEXT NOT NULL
+        );
         "#,
     )?;
 
@@ -155,24 +187,56 @@ pub fn query_security_events(
     let conn = Connection::open(sqlite_path)
         .with_context(|| format!("failed to open SQLite database at {}", sqlite_path))?;
 
-    let fetch_limit = filters.limit.unwrap_or(20).clamp(1, 500).max(100);
-    let mut stmt = conn.prepare(
-        "SELECT event_json FROM security_events ORDER BY timestamp DESC LIMIT ?1"
-    )?;
+    let mut sql = String::from("SELECT event_json FROM security_events WHERE 1=1");
+    let mut values: Vec<SqlValue> = Vec::new();
 
-    let rows = stmt.query_map(params![fetch_limit as i64], |row| row.get::<_, String>(0))?;
+    if let Some(source_ip) = &filters.source_ip {
+        sql.push_str(" AND source_ip = ?");
+        values.push(SqlValue::Text(source_ip.clone()));
+    }
+
+    if let Some(rule_id) = &filters.rule_id {
+        sql.push_str(" AND rule_ids LIKE ?");
+        values.push(SqlValue::Text(format!("%{}%", rule_id)));
+    }
+
+    if let Some(severity) = &filters.severity {
+        sql.push_str(" AND highest_severity = ?");
+        values.push(SqlValue::Text(severity.to_ascii_lowercase()));
+    }
+
+    if let Some(method) = &filters.method {
+        sql.push_str(" AND method = ?");
+        values.push(SqlValue::Text(method.to_ascii_uppercase()));
+    }
+
+    if let Some(path_contains) = &filters.path_contains {
+        sql.push_str(" AND path LIKE ?");
+        values.push(SqlValue::Text(format!("%{}%", path_contains)));
+    }
+
+    if let Some(since) = &filters.since {
+        sql.push_str(" AND timestamp >= ?");
+        values.push(SqlValue::Text(normalize_rfc3339(since)?));
+    }
+
+    if let Some(until) = &filters.until {
+        sql.push_str(" AND timestamp <= ?");
+        values.push(SqlValue::Text(normalize_rfc3339(until)?));
+    }
+
+    sql.push_str(" ORDER BY timestamp DESC LIMIT ?");
+    values.push(SqlValue::Integer(filters.limit.unwrap_or(20).clamp(1, 500) as i64));
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params_from_iter(values.iter()), |row| row.get::<_, String>(0))?;
 
     let mut items = Vec::new();
     for row in rows {
         let json = row?;
         let event: SecurityEvent = serde_json::from_str(&json)?;
-        if matches_event(&event, filters)? {
-            items.push(event);
-        }
+        items.push(event);
     }
-
-    let final_limit = filters.limit.unwrap_or(20).clamp(1, 500);
-    items.truncate(final_limit);
 
     Ok(items)
 }
@@ -188,127 +252,263 @@ pub fn query_admin_audits(
     let conn = Connection::open(sqlite_path)
         .with_context(|| format!("failed to open SQLite database at {}", sqlite_path))?;
 
-    let fetch_limit = filters.limit.unwrap_or(20).clamp(1, 500).max(100);
-    let mut stmt = conn.prepare(
-        "SELECT audit_json FROM admin_audits ORDER BY timestamp DESC LIMIT ?1"
-    )?;
+    let mut sql = String::from("SELECT audit_json FROM admin_audits WHERE 1=1");
+    let mut values: Vec<SqlValue> = Vec::new();
 
-    let rows = stmt.query_map(params![fetch_limit as i64], |row| row.get::<_, String>(0))?;
+    if let Some(actor) = &filters.actor {
+        sql.push_str(" AND actor = ?");
+        values.push(SqlValue::Text(actor.clone()));
+    }
+
+    if let Some(action) = &filters.action {
+        sql.push_str(" AND action = ?");
+        values.push(SqlValue::Text(action.clone()));
+    }
+
+    if let Some(target) = &filters.target {
+        sql.push_str(" AND target LIKE ?");
+        values.push(SqlValue::Text(format!("%{}%", target)));
+    }
+
+    if let Some(since) = &filters.since {
+        sql.push_str(" AND timestamp >= ?");
+        values.push(SqlValue::Text(normalize_rfc3339(since)?));
+    }
+
+    if let Some(until) = &filters.until {
+        sql.push_str(" AND timestamp <= ?");
+        values.push(SqlValue::Text(normalize_rfc3339(until)?));
+    }
+
+    sql.push_str(" ORDER BY timestamp DESC LIMIT ?");
+    values.push(SqlValue::Integer(filters.limit.unwrap_or(20).clamp(1, 500) as i64));
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params_from_iter(values.iter()), |row| row.get::<_, String>(0))?;
 
     let mut items = Vec::new();
     for row in rows {
         let json = row?;
         let audit: AdminAudit = serde_json::from_str(&json)?;
-        if matches_audit(&audit, filters)? {
-            items.push(audit);
-        }
+        items.push(audit);
     }
-
-    let final_limit = filters.limit.unwrap_or(20).clamp(1, 500);
-    items.truncate(final_limit);
 
     Ok(items)
 }
 
-fn matches_event(event: &SecurityEvent, filters: &EventSearchFilters) -> Result<bool> {
-    if let Some(source_ip) = &filters.source_ip {
-        if &event.source_ip != source_ip {
-            return Ok(false);
+pub fn upsert_active_mitigation(sqlite_path: &str, mitigation: &ActiveMitigation) -> Result<()> {
+    ensure_parent_dir(sqlite_path)?;
+
+    let conn = Connection::open(sqlite_path)?;
+    let (action_type, ttl_secs) = match mitigation.action {
+        crate::types::MitigationAction::BlockSourceIpTemporary { ttl_secs } => {
+            ("block_source_ip_temporary".to_string(), ttl_secs as i64)
         }
-    }
-
-    if let Some(method) = &filters.method {
-        if !event.method.eq_ignore_ascii_case(method) {
-            return Ok(false);
+        crate::types::MitigationAction::ThrottleSource { ttl_secs } => {
+            ("throttle_source".to_string(), ttl_secs as i64)
         }
-    }
-
-    if let Some(path_contains) = &filters.path_contains {
-        if !event.path.contains(path_contains) {
-            return Ok(false);
+        crate::types::MitigationAction::MarkSourceSuspicious { ttl_secs } => {
+            ("mark_source_suspicious".to_string(), ttl_secs as i64)
         }
-    }
+        crate::types::MitigationAction::BlockRequest => ("block_request".to_string(), 0),
+    };
 
-    if let Some(rule_id) = &filters.rule_id {
-        if !event.findings.iter().any(|f| f.rule_id == *rule_id) {
-            return Ok(false);
-        }
-    }
+    conn.execute(
+        r#"
+        INSERT INTO active_mitigations
+        (source_ip, action_id, action_type, ttl_secs, created_at, expires_at, reason)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        ON CONFLICT(source_ip) DO UPDATE SET
+            action_id = excluded.action_id,
+            action_type = excluded.action_type,
+            ttl_secs = excluded.ttl_secs,
+            created_at = excluded.created_at,
+            expires_at = excluded.expires_at,
+            reason = excluded.reason
+        "#,
+        params![
+            mitigation.source_ip.to_string(),
+            mitigation.action_id,
+            action_type,
+            ttl_secs,
+            mitigation.created_at.to_rfc3339(),
+            mitigation.expires_at.to_rfc3339(),
+            mitigation.reason
+        ],
+    )?;
 
-    if let Some(severity) = &filters.severity {
-        let wanted = severity.to_ascii_lowercase();
-        if !event
-            .findings
-            .iter()
-            .any(|f| severity_to_name(&f.severity) == wanted)
-        {
-            return Ok(false);
-        }
-    }
-
-    if let Some(since) = &filters.since {
-        let since_dt = DateTime::parse_from_rfc3339(since)
-            .with_context(|| format!("invalid since timestamp: {since}"))?
-            .with_timezone(&Utc);
-
-        if event.timestamp < since_dt {
-            return Ok(false);
-        }
-    }
-
-    if let Some(until) = &filters.until {
-        let until_dt = DateTime::parse_from_rfc3339(until)
-            .with_context(|| format!("invalid until timestamp: {until}"))?
-            .with_timezone(&Utc);
-
-        if event.timestamp > until_dt {
-            return Ok(false);
-        }
-    }
-
-    Ok(true)
+    Ok(())
 }
 
-fn matches_audit(audit: &AdminAudit, filters: &AuditSearchFilters) -> Result<bool> {
-    if let Some(actor) = &filters.actor {
-        if &audit.actor != actor {
-            return Ok(false);
-        }
+pub fn delete_active_mitigation(sqlite_path: &str, source_ip: &str) -> Result<()> {
+    let conn = Connection::open(sqlite_path)?;
+    conn.execute(
+        "DELETE FROM active_mitigations WHERE source_ip = ?1",
+        params![source_ip],
+    )?;
+    Ok(())
+}
+
+pub fn load_active_mitigations(sqlite_path: &str) -> Result<Vec<ActiveMitigation>> {
+    if !Path::new(sqlite_path).exists() {
+        return Ok(Vec::new());
     }
 
-    if let Some(action) = &filters.action {
-        if &audit.action != action {
-            return Ok(false);
-        }
+    let conn = Connection::open(sqlite_path)?;
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT source_ip, action_id, action_type, ttl_secs, created_at, expires_at, reason
+        FROM active_mitigations
+        ORDER BY expires_at ASC
+        "#,
+    )?;
+
+    let rows = stmt.query_map([], |row| {
+        let source_ip: String = row.get(0)?;
+        let action_id: String = row.get(1)?;
+        let action_type: String = row.get(2)?;
+        let ttl_secs: i64 = row.get(3)?;
+        let created_at: String = row.get(4)?;
+        let expires_at: String = row.get(5)?;
+        let reason: String = row.get(6)?;
+
+        let action = match action_type.as_str() {
+            "block_source_ip_temporary" => {
+                crate::types::MitigationAction::BlockSourceIpTemporary { ttl_secs: ttl_secs as u64 }
+            }
+            "throttle_source" => crate::types::MitigationAction::ThrottleSource { ttl_secs: ttl_secs as u64 },
+            "mark_source_suspicious" => {
+                crate::types::MitigationAction::MarkSourceSuspicious { ttl_secs: ttl_secs as u64 }
+            }
+            _ => crate::types::MitigationAction::BlockSourceIpTemporary { ttl_secs: ttl_secs as u64 },
+        };
+
+        Ok(ActiveMitigation {
+            action_id,
+            source_ip: source_ip.parse().map_err(|_| rusqlite::Error::InvalidQuery)?,
+            action,
+            created_at: parse_rfc3339_to_utc(&created_at).map_err(|_| rusqlite::Error::InvalidQuery)?,
+            expires_at: parse_rfc3339_to_utc(&expires_at).map_err(|_| rusqlite::Error::InvalidQuery)?,
+            reason,
+        })
+    })?;
+
+    let mut items = Vec::new();
+    for row in rows {
+        items.push(row?);
     }
 
-    if let Some(target) = &filters.target {
-        if !audit.target.contains(target) {
-            return Ok(false);
-        }
+    Ok(items)
+}
+
+pub fn upsert_reputation(sqlite_path: &str, reputation: &SourceReputation) -> Result<()> {
+    ensure_parent_dir(sqlite_path)?;
+
+    let conn = Connection::open(sqlite_path)?;
+    conn.execute(
+        r#"
+        INSERT INTO reputations (source_ip, suspicious_score, last_seen_at)
+        VALUES (?1, ?2, ?3)
+        ON CONFLICT(source_ip) DO UPDATE SET
+            suspicious_score = excluded.suspicious_score,
+            last_seen_at = excluded.last_seen_at
+        "#,
+        params![
+            reputation.source_ip,
+            reputation.suspicious_score,
+            reputation.last_seen_at.to_rfc3339()
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn load_reputations(sqlite_path: &str) -> Result<Vec<SourceReputation>> {
+    if !Path::new(sqlite_path).exists() {
+        return Ok(Vec::new());
     }
 
-    if let Some(since) = &filters.since {
-        let since_dt = DateTime::parse_from_rfc3339(since)
-            .with_context(|| format!("invalid since timestamp: {since}"))?
-            .with_timezone(&Utc);
+    let conn = Connection::open(sqlite_path)?;
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT source_ip, suspicious_score, last_seen_at
+        FROM reputations
+        ORDER BY last_seen_at DESC
+        "#,
+    )?;
 
-        if audit.timestamp < since_dt {
-            return Ok(false);
-        }
+    let rows = stmt.query_map([], |row| {
+        let source_ip: String = row.get(0)?;
+        let suspicious_score: i32 = row.get(1)?;
+        let last_seen_at: String = row.get(2)?;
+
+        Ok(SourceReputation {
+            source_ip,
+            suspicious_score,
+            last_seen_at: parse_rfc3339_to_utc(&last_seen_at).map_err(|_| rusqlite::Error::InvalidQuery)?,
+        })
+    })?;
+
+    let mut items = Vec::new();
+    for row in rows {
+        items.push(row?);
     }
 
-    if let Some(until) = &filters.until {
-        let until_dt = DateTime::parse_from_rfc3339(until)
-            .with_context(|| format!("invalid until timestamp: {until}"))?
-            .with_timezone(&Utc);
+    Ok(items)
+}
 
-        if audit.timestamp > until_dt {
-            return Ok(false);
-        }
+pub fn metrics_snapshot(sqlite_path: &str) -> Result<StorageMetrics> {
+    if !Path::new(sqlite_path).exists() {
+        return Ok(StorageMetrics::default());
     }
 
-    Ok(true)
+    let conn = Connection::open(sqlite_path)?;
+
+    let total_events: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM security_events",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let blocked_events: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM security_events WHERE outcome LIKE 'reject:%'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let total_audits: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM admin_audits",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let top_rule: Option<String> = conn
+        .query_row(
+            r#"
+            SELECT rule_ids
+            FROM security_events
+            WHERE rule_ids <> ''
+            ORDER BY timestamp DESC
+            LIMIT 1
+            "#,
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+
+    Ok(StorageMetrics {
+        total_events,
+        blocked_events,
+        total_audits,
+        latest_rule_ids: top_rule.unwrap_or_default(),
+    })
+}
+
+#[derive(Debug, Default)]
+pub struct StorageMetrics {
+    pub total_events: i64,
+    pub blocked_events: i64,
+    pub total_audits: i64,
+    pub latest_rule_ids: String,
 }
 
 fn ensure_parent_dir(path: &str) -> Result<()> {
@@ -338,12 +538,10 @@ fn rank_to_severity_name(rank: i32) -> &'static str {
     }
 }
 
-fn severity_to_name(severity: &Severity) -> String {
-    match severity {
-        Severity::Low => "low",
-        Severity::Medium => "medium",
-        Severity::High => "high",
-        Severity::Critical => "critical",
-    }
-    .to_string()
+fn normalize_rfc3339(input: &str) -> Result<String> {
+    Ok(parse_rfc3339_to_utc(input)?.to_rfc3339())
+}
+
+fn parse_rfc3339_to_utc(input: &str) -> Result<DateTime<Utc>> {
+    Ok(DateTime::parse_from_rfc3339(input)?.with_timezone(&Utc))
 }

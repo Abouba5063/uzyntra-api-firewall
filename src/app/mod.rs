@@ -13,6 +13,7 @@ use crate::{
     mitigation::TemporaryMitigationStore,
     proxy,
     rate_limit::RateLimiter,
+    storage,
     types::AppState,
 };
 
@@ -46,32 +47,72 @@ pub fn build_state(config: AppConfig) -> anyhow::Result<AppState> {
     Ok(state)
 }
 
+pub fn hydrate_state_from_storage(state: &AppState) -> anyhow::Result<()> {
+    let mitigations = storage::load_active_mitigations(&state.config.storage.sqlite_path)?;
+    let reputations = storage::load_reputations(&state.config.storage.sqlite_path)?;
+
+    for mitigation in mitigations {
+        if mitigation.expires_at > chrono::Utc::now() {
+            state.mitigation_store.insert_block_hydrated(mitigation);
+        }
+    }
+
+    for reputation in reputations {
+        state.mitigation_store.insert_reputation_hydrated(reputation);
+    }
+
+    info!(
+        active_blocks = state.mitigation_store.active_block_count(),
+        reputation_entries = state.mitigation_store.list_reputations().len(),
+        "hydrated in-memory state from SQLite"
+    );
+
+    Ok(())
+}
+
 pub fn start_background_tasks(state: AppState) {
     tokio::spawn(async move {
         let interval_secs = 30u64;
 
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(interval_secs)).await;
-            let removed = state.mitigation_store.cleanup_expired();
+            let expired = state.mitigation_store.cleanup_expired();
 
-            if removed > 0 {
-                info!(removed = removed, "cleaned up expired temporary mitigations");
+            if !expired.is_empty() {
+                for ip in &expired {
+                    if let Err(err) =
+                        storage::delete_active_mitigation(&state.config.storage.sqlite_path, &ip.to_string())
+                    {
+                        tracing::error!(error = %err, source_ip = %ip, "failed to delete expired mitigation from SQLite");
+                    }
+                }
+
+                info!(removed = expired.len(), "cleaned up expired temporary mitigations");
             }
         }
     });
 }
 
-pub fn build_router(state: AppState) -> Router {
-    let public_router = Router::new()
+pub fn build_public_router(state: AppState) -> Router {
+    Router::new()
         .route("/", get(control_plane::root))
-        .route("/healthz", get(control_plane::healthz))
+        .route("/healthz", get(control_plane::public_healthz))
         .route("/readyz", get(control_plane::readyz))
+        .route("/proxy/{*path}", any(proxy::proxy_handler))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            core::security_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             core::request_context_middleware,
-        ));
+        ))
+        .with_state(state)
+}
 
-    let admin_router = Router::new()
+pub fn build_admin_router(state: AppState) -> Router {
+    Router::new()
+        .route("/healthz", get(control_plane::admin_healthz))
         .route("/v1/admin/config", get(control_plane::get_config))
         .route(
             "/v1/admin/recommendations/demo",
@@ -109,6 +150,10 @@ pub fn build_router(state: AppState) -> Router {
             "/v1/admin/audits/recent",
             get(control_plane::recent_audits),
         )
+        .route(
+            "/v1/admin/metrics",
+            get(control_plane::metrics),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             core::admin_auth_middleware,
@@ -116,22 +161,6 @@ pub fn build_router(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             core::request_context_middleware,
-        ));
-
-    let proxy_router = Router::new()
-        .route("/proxy/{*path}", any(proxy::proxy_handler))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            core::security_middleware,
         ))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            core::request_context_middleware,
-        ));
-
-    Router::new()
-        .merge(public_router)
-        .merge(admin_router)
-        .merge(proxy_router)
         .with_state(state)
 }
