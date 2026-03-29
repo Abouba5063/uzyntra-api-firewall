@@ -19,6 +19,7 @@ pub struct ServerConfig {
     pub admin_bind_addr: String,
     pub trust_x_forwarded_for: bool,
     pub environment: String,
+    pub admin_public_health_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

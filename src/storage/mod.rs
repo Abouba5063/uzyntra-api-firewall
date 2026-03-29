@@ -10,7 +10,7 @@ use rusqlite::{
 
 use crate::{
     mitigation::ActiveMitigation,
-    types::{AdminAudit, AuditSearchFilters, EventSearchFilters, SecurityEvent, SourceReputation, Severity},
+    types::{AdminAudit, AuditSearchFilters, EventSearchFilters, SecurityEvent, Severity, SourceReputation},
 };
 
 pub fn init_db(sqlite_path: &str) -> Result<()> {
@@ -23,6 +23,18 @@ pub fn init_db(sqlite_path: &str) -> Result<()> {
         r#"
         PRAGMA journal_mode = WAL;
         PRAGMA foreign_keys = ON;
+
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_at TEXT NOT NULL
+        );
+
+        INSERT OR IGNORE INTO schema_migrations(version, name, applied_at)
+        VALUES (1, 'initial_sqlite_persistence', CURRENT_TIMESTAMP);
+
+        INSERT OR IGNORE INTO schema_migrations(version, name, applied_at)
+        VALUES (2, 'phase_7_pagination_and_admin_actions', CURRENT_TIMESTAMP);
 
         CREATE TABLE IF NOT EXISTS security_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -225,8 +237,9 @@ pub fn query_security_events(
         values.push(SqlValue::Text(normalize_rfc3339(until)?));
     }
 
-    sql.push_str(" ORDER BY timestamp DESC LIMIT ?");
+    sql.push_str(" ORDER BY timestamp DESC LIMIT ? OFFSET ?");
     values.push(SqlValue::Integer(filters.limit.unwrap_or(20).clamp(1, 500) as i64));
+    values.push(SqlValue::Integer(filters.offset.unwrap_or(0) as i64));
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(values.iter()), |row| row.get::<_, String>(0))?;
@@ -280,8 +293,9 @@ pub fn query_admin_audits(
         values.push(SqlValue::Text(normalize_rfc3339(until)?));
     }
 
-    sql.push_str(" ORDER BY timestamp DESC LIMIT ?");
+    sql.push_str(" ORDER BY timestamp DESC LIMIT ? OFFSET ?");
     values.push(SqlValue::Integer(filters.limit.unwrap_or(20).clamp(1, 500) as i64));
+    values.push(SqlValue::Integer(filters.offset.unwrap_or(0) as i64));
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(values.iter()), |row| row.get::<_, String>(0))?;
@@ -456,6 +470,12 @@ pub fn load_reputations(sqlite_path: &str) -> Result<Vec<SourceReputation>> {
     Ok(items)
 }
 
+pub fn delete_reputation(sqlite_path: &str, source_ip: &str) -> Result<()> {
+    let conn = Connection::open(sqlite_path)?;
+    conn.execute("DELETE FROM reputations WHERE source_ip = ?1", params![source_ip])?;
+    Ok(())
+}
+
 pub fn metrics_snapshot(sqlite_path: &str) -> Result<StorageMetrics> {
     if !Path::new(sqlite_path).exists() {
         return Ok(StorageMetrics::default());
@@ -481,7 +501,19 @@ pub fn metrics_snapshot(sqlite_path: &str) -> Result<StorageMetrics> {
         |row| row.get(0),
     )?;
 
-    let top_rule: Option<String> = conn
+    let persisted_active_mitigations: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM active_mitigations",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let persisted_reputations: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM reputations",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let latest_rule_ids: Option<String> = conn
         .query_row(
             r#"
             SELECT rule_ids
@@ -499,7 +531,9 @@ pub fn metrics_snapshot(sqlite_path: &str) -> Result<StorageMetrics> {
         total_events,
         blocked_events,
         total_audits,
-        latest_rule_ids: top_rule.unwrap_or_default(),
+        latest_rule_ids: latest_rule_ids.unwrap_or_default(),
+        persisted_active_mitigations,
+        persisted_reputations,
     })
 }
 
@@ -509,6 +543,8 @@ pub struct StorageMetrics {
     pub blocked_events: i64,
     pub total_audits: i64,
     pub latest_rule_ids: String,
+    pub persisted_active_mitigations: i64,
+    pub persisted_reputations: i64,
 }
 
 fn ensure_parent_dir(path: &str) -> Result<()> {

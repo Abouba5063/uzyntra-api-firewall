@@ -180,6 +180,10 @@ impl TemporaryMitigationStore {
             );
         }
     }
+
+    pub fn reset_reputation(&self, ip: IpAddr) -> bool {
+        self.reputation.remove(&ip).is_some()
+    }
 }
 
 pub fn finalize_blocking_decision(
@@ -321,6 +325,25 @@ pub fn apply_non_blocking_effects(state: &AppState, context: &RequestContext, de
             );
         }
     }
+}
+
+pub fn apply_manual_block(
+    state: &AppState,
+    ip: IpAddr,
+    ttl_secs: u64,
+    reason: String,
+) -> anyhow::Result<ActiveMitigation> {
+    let mitigation = state.mitigation_store.block_ip_for(ip, ttl_secs, reason);
+    storage::upsert_active_mitigation(&state.config.storage.sqlite_path, &mitigation)?;
+    Ok(mitigation)
+}
+
+pub fn reset_reputation_for_ip(state: &AppState, ip: IpAddr) -> anyhow::Result<bool> {
+    let removed = state.mitigation_store.reset_reputation(ip);
+    if removed {
+        storage::delete_reputation(&state.config.storage.sqlite_path, &ip.to_string())?;
+    }
+    Ok(removed)
 }
 
 fn calculate_reputation_delta(decision: &SecurityDecision) -> i32 {

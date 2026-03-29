@@ -32,7 +32,14 @@ pub struct RequestContext {
     pub path: String,
     pub query: Option<String>,
     pub body_preview: Option<String>,
+    pub parsed_body_fields: Vec<ParsedBodyField>,
     pub auth_status: AuthStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParsedBodyField {
+    pub key: String,
+    pub value_preview: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +149,7 @@ pub enum OperatorActionKind {
     UnblockIp,
     TightenRouteRateLimit,
     SwitchRuleMode,
+    ResetReputation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -173,6 +181,7 @@ pub struct EventSearchFilters {
     pub since: Option<String>,
     pub until: Option<String>,
     pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -183,6 +192,14 @@ pub struct AuditSearchFilters {
     pub since: Option<String>,
     pub until: Option<String>,
     pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ManualBlockRequest {
+    pub source_ip: String,
+    pub ttl_secs: Option<u64>,
+    pub reason: Option<String>,
 }
 
 pub fn resolve_rule_mode(state: &AppState, path: &str, rule_id: &str) -> RuleMode {

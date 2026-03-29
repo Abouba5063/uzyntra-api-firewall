@@ -269,11 +269,22 @@ fn inspect_body(state: &AppState, context: &RequestContext, findings: &mut Vec<F
         return;
     }
 
-    let Some(body) = &context.body_preview else {
-        return;
-    };
+    let mut body_candidates = Vec::new();
 
-    let normalized = normalized_variants(vec![body.clone()]);
+    if let Some(body) = &context.body_preview {
+        body_candidates.push(body.clone());
+    }
+
+    for field in &context.parsed_body_fields {
+        body_candidates.push(format!("{}={}", field.key, field.value_preview));
+        body_candidates.push(field.value_preview.clone());
+    }
+
+    if body_candidates.is_empty() {
+        return;
+    }
+
+    let normalized = normalized_variants(body_candidates);
     let haystack = normalized.join(" | ");
     let lower = haystack.to_ascii_lowercase();
 

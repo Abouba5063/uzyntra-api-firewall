@@ -111,56 +111,73 @@ pub fn build_public_router(state: AppState) -> Router {
 }
 
 pub fn build_admin_router(state: AppState) -> Router {
-    Router::new()
-        .route("/healthz", get(control_plane::admin_healthz))
-        .route("/v1/admin/config", get(control_plane::get_config))
-        .route(
-            "/v1/admin/recommendations/demo",
-            get(control_plane::demo_recommendations),
+    let live_router = if state.config.server.admin_public_health_enabled {
+        Router::new().route("/livez", get(control_plane::admin_livez))
+    } else {
+        Router::new()
+    };
+
+    live_router
+        .merge(
+            Router::new()
+                .route("/healthz", get(control_plane::admin_healthz))
+                .route("/v1/admin/config", get(control_plane::get_config))
+                .route(
+                    "/v1/admin/recommendations/demo",
+                    get(control_plane::demo_recommendations),
+                )
+                .route(
+                    "/v1/admin/commands/demo",
+                    get(control_plane::demo_one_click_commands),
+                )
+                .route(
+                    "/v1/admin/mitigations/active",
+                    get(control_plane::list_active_blocks),
+                )
+                .route(
+                    "/v1/admin/reputations",
+                    get(control_plane::list_reputations),
+                )
+                .route(
+                    "/v1/admin/reputations/{ip}",
+                    get(control_plane::get_reputation),
+                )
+                .route(
+                    "/v1/admin/reputations/reset/{ip}",
+                    post(control_plane::reset_reputation),
+                )
+                .route(
+                    "/v1/admin/mitigations/unblock/{ip}",
+                    post(control_plane::unblock_ip),
+                )
+                .route(
+                    "/v1/admin/mitigations/block",
+                    post(control_plane::manual_block_ip),
+                )
+                .route(
+                    "/v1/admin/events/recent",
+                    get(control_plane::recent_events),
+                )
+                .route(
+                    "/v1/admin/events/search",
+                    get(control_plane::search_events),
+                )
+                .route(
+                    "/v1/admin/audits/recent",
+                    get(control_plane::recent_audits),
+                )
+                .route(
+                    "/v1/admin/metrics",
+                    get(control_plane::metrics),
+                )
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    core::admin_auth_middleware,
+                ))
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    core::request_context_middleware,
+                )),
         )
-        .route(
-            "/v1/admin/commands/demo",
-            get(control_plane::demo_one_click_commands),
-        )
-        .route(
-            "/v1/admin/mitigations/active",
-            get(control_plane::list_active_blocks),
-        )
-        .route(
-            "/v1/admin/reputations",
-            get(control_plane::list_reputations),
-        )
-        .route(
-            "/v1/admin/reputations/{ip}",
-            get(control_plane::get_reputation),
-        )
-        .route(
-            "/v1/admin/mitigations/unblock/{ip}",
-            post(control_plane::unblock_ip),
-        )
-        .route(
-            "/v1/admin/events/recent",
-            get(control_plane::recent_events),
-        )
-        .route(
-            "/v1/admin/events/search",
-            get(control_plane::search_events),
-        )
-        .route(
-            "/v1/admin/audits/recent",
-            get(control_plane::recent_audits),
-        )
-        .route(
-            "/v1/admin/metrics",
-            get(control_plane::metrics),
-        )
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            core::admin_auth_middleware,
-        ))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            core::request_context_middleware,
-        ))
         .with_state(state)
 }

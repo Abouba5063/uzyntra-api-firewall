@@ -7,13 +7,16 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use serde_json::Value as JsonValue;
 use tracing::{error, info, warn};
+use urlencoding::decode;
 use uuid::Uuid;
 
 use crate::{
     detection, mitigation, policy, rate_limit, storage, telemetry,
     types::{
-        AppState, AuthStatus, DecisionOutcome, RequestContext, SecurityDecision, SecurityEvent,
+        AppState, AuthStatus, DecisionOutcome, ParsedBodyField, RequestContext, SecurityDecision,
+        SecurityEvent,
     },
 };
 
@@ -35,18 +38,26 @@ pub async fn request_context_middleware(
     let request_id = Uuid::new_v4().to_string();
     let query = parts.uri.query().map(ToOwned::to_owned);
 
-    let (body_preview, body_bytes) = if state.config.security.inspect_body {
+    let content_type = parts
+        .headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    let (body_preview, parsed_body_fields, body_bytes) = if state.config.security.inspect_body {
         match to_bytes(body, state.config.security.max_inspection_body_bytes).await {
             Ok(bytes) => {
                 let preview = preview_body(&bytes, state.config.security.max_inspection_body_bytes);
-                (preview, bytes.to_vec())
+                let parsed_fields = parse_body_fields(&content_type, &bytes);
+                (preview, parsed_fields, bytes.to_vec())
             }
-            Err(_) => (None, Vec::new()),
+            Err(_) => (None, Vec::new(), Vec::new()),
         }
     } else {
         match to_bytes(body, state.config.proxy.max_body_bytes).await {
-            Ok(bytes) => (None, bytes.to_vec()),
-            Err(_) => (None, Vec::new()),
+            Ok(bytes) => (None, Vec::new(), bytes.to_vec()),
+            Err(_) => (None, Vec::new(), Vec::new()),
         }
     };
 
@@ -60,6 +71,7 @@ pub async fn request_context_middleware(
         path: parts.uri.path().to_string(),
         query,
         body_preview,
+        parsed_body_fields,
         auth_status,
     };
 
@@ -271,4 +283,93 @@ fn preview_body(bytes: &[u8], max: usize) -> Option<String> {
 
     let slice = if bytes.len() > max { &bytes[..max] } else { bytes };
     Some(String::from_utf8_lossy(slice).to_string())
+}
+
+fn parse_body_fields(content_type: &str, bytes: &[u8]) -> Vec<ParsedBodyField> {
+    if bytes.is_empty() {
+        return Vec::new();
+    }
+
+    if content_type.contains("application/json") {
+        return parse_json_fields(bytes);
+    }
+
+    if content_type.contains("application/x-www-form-urlencoded") {
+        return parse_form_fields(bytes);
+    }
+
+    Vec::new()
+}
+
+fn parse_json_fields(bytes: &[u8]) -> Vec<ParsedBodyField> {
+    let Ok(value) = serde_json::from_slice::<JsonValue>(bytes) else {
+        return Vec::new();
+    };
+
+    let mut fields = Vec::new();
+    flatten_json("", &value, &mut fields);
+    fields
+}
+
+fn flatten_json(prefix: &str, value: &JsonValue, fields: &mut Vec<ParsedBodyField>) {
+    match value {
+        JsonValue::Object(map) => {
+            for (k, v) in map {
+                let next = if prefix.is_empty() {
+                    k.to_string()
+                } else {
+                    format!("{prefix}.{k}")
+                };
+                flatten_json(&next, v, fields);
+            }
+        }
+        JsonValue::Array(items) => {
+            for (idx, v) in items.iter().enumerate() {
+                let next = format!("{prefix}[{idx}]");
+                flatten_json(&next, v, fields);
+            }
+        }
+        JsonValue::String(s) => fields.push(ParsedBodyField {
+            key: prefix.to_string(),
+            value_preview: truncate_value(s, 200),
+        }),
+        JsonValue::Number(n) => fields.push(ParsedBodyField {
+            key: prefix.to_string(),
+            value_preview: n.to_string(),
+        }),
+        JsonValue::Bool(b) => fields.push(ParsedBodyField {
+            key: prefix.to_string(),
+            value_preview: b.to_string(),
+        }),
+        JsonValue::Null => {}
+    }
+}
+
+fn parse_form_fields(bytes: &[u8]) -> Vec<ParsedBodyField> {
+    let raw = String::from_utf8_lossy(bytes);
+    let mut fields = Vec::new();
+
+    for pair in raw.split('&') {
+        let mut parts = pair.splitn(2, '=');
+        let key = parts.next().unwrap_or_default();
+        let val = parts.next().unwrap_or_default();
+
+        let decoded_key = decode(key).map(|v| v.to_string()).unwrap_or_else(|_| key.to_string());
+        let decoded_val = decode(val).map(|v| v.to_string()).unwrap_or_else(|_| val.to_string());
+
+        fields.push(ParsedBodyField {
+            key: decoded_key,
+            value_preview: truncate_value(&decoded_val, 200),
+        });
+    }
+
+    fields
+}
+
+fn truncate_value(value: &str, max: usize) -> String {
+    if value.len() <= max {
+        value.to_string()
+    } else {
+        format!("{}...", &value[..max])
+    }
 }
