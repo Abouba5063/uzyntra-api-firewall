@@ -1,17 +1,24 @@
 use axum::{
     body::{to_bytes, Body},
     extract::{Path, Request, State},
-    http::{HeaderName, HeaderValue, Method, Response, StatusCode},
+    http::{HeaderMap, HeaderName, HeaderValue, Method, Response, StatusCode},
 };
 use tracing::{error, info};
 
-use crate::types::AppState;
+use crate::{
+    policy, telemetry,
+    types::{
+        AppState, AttackClass, Finding, FindingEvidence, RequestContext, Severity,
+    },
+};
 
 pub async fn proxy_handler(
     State(state): State<AppState>,
     Path(path): Path<String>,
     request: Request<Body>,
 ) -> Response<Body> {
+    let context = request.extensions().get::<RequestContext>().cloned();
+
     let method = request.method().clone();
     let query = request.uri().query().map(ToOwned::to_owned);
     let headers = request.headers().clone();
@@ -50,7 +57,7 @@ pub async fn proxy_handler(
         }
     }
 
-    builder = builder.body(body_bytes.clone());
+    builder = builder.body(body_bytes);
 
     let upstream_response = match builder.send().await {
         Ok(resp) => resp,
@@ -66,6 +73,24 @@ pub async fn proxy_handler(
 
     let status = upstream_response.status();
     let response_headers = upstream_response.headers().clone();
+
+    let response_findings = inspect_response_headers(&response_headers, &state, context.as_ref());
+    if !response_findings.is_empty() {
+        if let Some(ctx) = &context {
+            let decision = policy::evaluate_findings(&state, ctx, response_findings.clone());
+            let event = crate::types::SecurityEvent {
+                request_id: ctx.request_id.clone(),
+                timestamp: ctx.timestamp,
+                source_ip: ctx.source_ip.to_string(),
+                method: ctx.method.clone(),
+                path: ctx.path.clone(),
+                findings: response_findings,
+                decision,
+            };
+
+            telemetry::emit_security_event(&event, &state.config.telemetry.security_event_log_path);
+        }
+    }
 
     let response_body = match upstream_response.bytes().await {
         Ok(bytes) => bytes,
@@ -100,6 +125,41 @@ pub async fn proxy_handler(
     );
 
     response
+}
+
+fn inspect_response_headers(
+    headers: &HeaderMap,
+    state: &AppState,
+    context: Option<&RequestContext>,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    let required = [
+        ("x-content-type-options", "missing.x_content_type_options"),
+        ("x-frame-options", "missing.x_frame_options"),
+        ("content-security-policy", "missing.csp"),
+    ];
+
+    for (header, rule_id) in required {
+        if !headers.contains_key(header) {
+            let path = context.map(|c| c.path.as_str()).unwrap_or("/proxy");
+
+            findings.push(Finding {
+                rule_id: rule_id.to_string(),
+                attack_class: AttackClass::MissingSecurityHeaders,
+                severity: Severity::Low,
+                confidence: 0.95,
+                message: format!("upstream response missing security header '{}'", header),
+                evidence: vec![FindingEvidence {
+                    location: "response.headers".into(),
+                    value_preview: header.to_string(),
+                }],
+                mode: crate::types::resolve_rule_mode(state, path, rule_id),
+            });
+        }
+    }
+
+    findings
 }
 
 fn build_upstream_url(base: &str, path: &str, query: Option<&str>) -> String {

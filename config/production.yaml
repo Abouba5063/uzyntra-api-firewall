@@ -21,6 +21,7 @@ security:
   max_inspection_body_bytes: 32768
   temp_ban_secs: 900
   temp_suspicious_secs: 300
+  suspicious_score_threshold: 12
   rate_limit:
     requests_per_window: 120
     window_secs: 60
@@ -40,9 +41,15 @@ security:
     body.xss.basic: block
     body.cmdi.basic: block
     rate_limit.exceeded: block
+    missing.x_content_type_options: detect_only
+    missing.x_frame_options: detect_only
+    missing.csp: detect_only
+  route_overrides: []
+  route_rate_limits: []
 
 telemetry:
   log_level: "info"
+  security_event_log_path: "data/security-events.jsonl"
 
 auth:
   enabled: true
@@ -52,3 +59,7 @@ auth:
   protected_path_prefixes:
     - "/admin"
     - "/internal"
+  admin:
+    enabled: true
+    header_name: "x-admin-token"
+    token: "replace-me-admin-token"

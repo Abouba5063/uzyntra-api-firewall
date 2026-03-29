@@ -41,6 +41,9 @@ security:
     body.xss.basic: block
     body.cmdi.basic: block
     rate_limit.exceeded: block
+    missing.x_content_type_options: detect_only
+    missing.x_frame_options: detect_only
+    missing.csp: detect_only
   route_overrides:
     - path_prefix: "/proxy/get"
       rule_modes:
@@ -49,9 +52,17 @@ security:
       rule_modes:
         body.sqli.basic: block
         body.xss.basic: block
+  route_rate_limits:
+    - path_prefix: "/proxy/post"
+      requests_per_window: 10
+      window_secs: 60
+    - path_prefix: "/proxy/get"
+      requests_per_window: 30
+      window_secs: 60
 
 telemetry:
   log_level: "info"
+  security_event_log_path: "data/security-events.jsonl"
 
 auth:
   enabled: true
@@ -61,3 +72,7 @@ auth:
   protected_path_prefixes:
     - "/proxy/anything/protected"
     - "/proxy/post"
+  admin:
+    enabled: true
+    header_name: "x-admin-token"
+    token: "dev-admin-token-1"

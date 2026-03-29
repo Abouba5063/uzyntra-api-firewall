@@ -106,7 +106,7 @@ pub async fn security_middleware(
 
     if let Some(rate_limit_finding) = rate_limit::evaluate_request(&state, &context) {
         let decision = policy::evaluate_findings(&state, &context, vec![rate_limit_finding]);
-        emit_event(&context, &decision);
+        emit_event(&state, &context, &decision);
         return mitigation::finalize_blocking_decision(&state, &context, decision);
     }
 
@@ -116,7 +116,7 @@ pub async fn security_middleware(
     request.extensions_mut().insert(findings);
     request.extensions_mut().insert(decision.clone());
 
-    emit_event(&context, &decision);
+    emit_event(&state, &context, &decision);
 
     if matches!(decision.outcome, DecisionOutcome::Reject { .. }) {
         return mitigation::finalize_blocking_decision(&state, &context, decision);
@@ -138,7 +138,34 @@ pub async fn security_middleware(
     response
 }
 
-fn emit_event(context: &RequestContext, decision: &SecurityDecision) {
+pub async fn admin_auth_middleware(
+    State(state): State<AppState>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    if !state.config.auth.admin.enabled {
+        return next.run(request).await;
+    }
+
+    let header_name = &state.config.auth.admin.header_name;
+
+    let provided = request
+        .headers()
+        .get(header_name)
+        .and_then(|v| v.to_str().ok());
+
+    let Some(token) = provided else {
+        return build_error_response(StatusCode::UNAUTHORIZED, "missing admin token", None);
+    };
+
+    if token != state.config.auth.admin.token {
+        return build_error_response(StatusCode::UNAUTHORIZED, "invalid admin token", None);
+    }
+
+    next.run(request).await
+}
+
+fn emit_event(state: &AppState, context: &RequestContext, decision: &SecurityDecision) {
     if decision.findings.is_empty() {
         return;
     }
@@ -153,7 +180,7 @@ fn emit_event(context: &RequestContext, decision: &SecurityDecision) {
         decision: decision.clone(),
     };
 
-    telemetry::emit_security_event(&event);
+    telemetry::emit_security_event(&event, &state.config.telemetry.security_event_log_path);
 }
 
 fn evaluate_auth_status(state: &AppState, path: &str, headers: &HeaderMap) -> AuthStatus {

@@ -1,5 +1,4 @@
 use std::{
-    net::IpAddr,
     time::{Duration, Instant},
 };
 
@@ -17,37 +16,34 @@ struct RateState {
 
 #[derive(Debug, Default)]
 pub struct RateLimiter {
-    limit: u64,
-    window: Duration,
-    entries: DashMap<IpAddr, RateState>,
+    entries: DashMap<String, RateState>,
 }
 
 impl RateLimiter {
-    pub fn new(limit: u64, window_secs: u64) -> Self {
+    pub fn new(_limit: u64, _window_secs: u64) -> Self {
         Self {
-            limit,
-            window: Duration::from_secs(window_secs),
             entries: DashMap::new(),
         }
     }
 
-    pub fn check(&self, ip: IpAddr) -> bool {
+    pub fn check(&self, key: &str, limit: u64, window_secs: u64) -> bool {
         let now = Instant::now();
+        let window = Duration::from_secs(window_secs);
 
-        match self.entries.get_mut(&ip) {
+        match self.entries.get_mut(key) {
             Some(mut entry) => {
-                if now.duration_since(entry.window_start) >= self.window {
+                if now.duration_since(entry.window_start) >= window {
                     entry.count = 1;
                     entry.window_start = now;
                     true
                 } else {
                     entry.count += 1;
-                    entry.count <= self.limit
+                    entry.count <= limit
                 }
             }
             None => {
                 self.entries.insert(
-                    ip,
+                    key.to_string(),
                     RateState {
                         count: 1,
                         window_start: now,
@@ -60,7 +56,10 @@ impl RateLimiter {
 }
 
 pub fn evaluate_request(state: &AppState, context: &RequestContext) -> Option<Finding> {
-    let allowed = state.rate_limiter.check(context.source_ip);
+    let (bucket, limit, window_secs) = resolve_rate_limit_for_path(state, &context.path);
+    let key = format!("{}|{}", context.source_ip, bucket);
+
+    let allowed = state.rate_limiter.check(&key, limit, window_secs);
 
     if allowed {
         return None;
@@ -71,11 +70,32 @@ pub fn evaluate_request(state: &AppState, context: &RequestContext) -> Option<Fi
         attack_class: AttackClass::RateLimitExceeded,
         severity: Severity::High,
         confidence: 0.99,
-        message: "rate limit exceeded".into(),
+        message: format!(
+            "rate limit exceeded for bucket '{}' ({} requests / {} seconds)",
+            bucket, limit, window_secs
+        ),
         evidence: vec![FindingEvidence {
             location: "source.ip".into(),
             value_preview: context.source_ip.to_string(),
         }],
         mode: resolve_rule_mode(state, &context.path, "rate_limit.exceeded"),
     })
+}
+
+fn resolve_rate_limit_for_path(state: &AppState, path: &str) -> (String, u64, u64) {
+    for route in &state.config.security.route_rate_limits {
+        if path.starts_with(&route.path_prefix) {
+            return (
+                route.path_prefix.clone(),
+                route.requests_per_window,
+                route.window_secs,
+            );
+        }
+    }
+
+    (
+        "default".to_string(),
+        state.config.security.rate_limit.requests_per_window,
+        state.config.security.rate_limit.window_secs,
+    )
 }

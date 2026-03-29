@@ -1,12 +1,18 @@
 use std::{collections::HashMap, net::IpAddr};
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Json,
 };
+use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::{mitigation, types::AppState};
+use crate::{mitigation, telemetry, types::AppState};
+
+#[derive(Debug, Deserialize)]
+pub struct RecentEventsQuery {
+    pub limit: Option<usize>,
+}
 
 pub async fn root() -> Json<Value> {
     Json(json!({
@@ -41,7 +47,11 @@ pub async fn get_config(State(state): State<AppState>) -> Json<Value> {
             "enabled": state.config.auth.enabled,
             "header_name": state.config.auth.header_name,
             "protected_path_prefixes": state.config.auth.protected_path_prefixes,
-            "api_keys_count": state.config.auth.api_keys.len()
+            "api_keys_count": state.config.auth.api_keys.len(),
+            "admin": {
+                "enabled": state.config.auth.admin.enabled,
+                "header_name": state.config.auth.admin.header_name
+            }
         }
     }))
 }
@@ -55,6 +65,36 @@ pub async fn demo_recommendations() -> Json<Value> {
 
     Json(json!({
         "recommendations": recommendations,
+        "commands": commands
+    }))
+}
+
+pub async fn demo_one_click_commands() -> Json<Value> {
+    let mut block_params = HashMap::new();
+    block_params.insert("ttl_secs".to_string(), "900".to_string());
+    block_params.insert("source_ip".to_string(), "127.0.0.1".to_string());
+
+    let mut unblock_params = HashMap::new();
+    unblock_params.insert("source_ip".to_string(), "127.0.0.1".to_string());
+
+    let commands = vec![
+        json!({
+            "kind": "BlockIpTemporary",
+            "title": "Temporarily block source IP",
+            "rationale": "Use for repeated exploit probes.",
+            "reversible": true,
+            "parameters": block_params
+        }),
+        json!({
+            "kind": "UnblockIp",
+            "title": "Remove temporary block",
+            "rationale": "Use when analyst confirms the source should be restored.",
+            "reversible": true,
+            "parameters": unblock_params
+        }),
+    ];
+
+    Json(json!({
         "commands": commands
     }))
 }
@@ -124,32 +164,19 @@ pub async fn unblock_ip(
     }
 }
 
-pub async fn demo_one_click_commands() -> Json<Value> {
-    let mut block_params = HashMap::new();
-    block_params.insert("ttl_secs".to_string(), "900".to_string());
-    block_params.insert("source_ip".to_string(), "127.0.0.1".to_string());
+pub async fn recent_events(
+    State(state): State<AppState>,
+    Query(query): Query<RecentEventsQuery>,
+) -> Json<Value> {
+    let limit = query.limit.unwrap_or(20);
 
-    let mut unblock_params = HashMap::new();
-    unblock_params.insert("source_ip".to_string(), "127.0.0.1".to_string());
-
-    let commands = vec![
-        json!({
-            "kind": "BlockIpTemporary",
-            "title": "Temporarily block source IP",
-            "rationale": "Use for repeated exploit probes.",
-            "reversible": true,
-            "parameters": block_params
-        }),
-        json!({
-            "kind": "UnblockIp",
-            "title": "Remove temporary block",
-            "rationale": "Use when analyst confirms the source should be restored.",
-            "reversible": true,
-            "parameters": unblock_params
-        }),
-    ];
-
-    Json(json!({
-        "commands": commands
-    }))
+    match telemetry::read_recent_events(&state.config.telemetry.security_event_log_path, limit) {
+        Ok(items) => Json(json!({
+            "count": items.len(),
+            "items": items
+        })),
+        Err(err) => Json(json!({
+            "error": err.to_string()
+        })),
+    }
 }

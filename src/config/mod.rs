@@ -42,6 +42,7 @@ pub struct SecurityConfig {
     pub rate_limit: RateLimitConfig,
     pub rule_modes: HashMap<String, RuleMode>,
     pub route_overrides: Vec<RoutePolicyOverride>,
+    pub route_rate_limits: Vec<RouteRateLimitOverride>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +54,7 @@ pub struct RateLimitConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelemetryConfig {
     pub log_level: String,
+    pub security_event_log_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +63,14 @@ pub struct AuthConfig {
     pub header_name: String,
     pub api_keys: Vec<String>,
     pub protected_path_prefixes: Vec<String>,
+    pub admin: AdminAuthConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAuthConfig {
+    pub enabled: bool,
+    pub header_name: String,
+    pub token: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -81,6 +91,13 @@ impl Default for RuleMode {
 pub struct RoutePolicyOverride {
     pub path_prefix: String,
     pub rule_modes: HashMap<String, RuleMode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteRateLimitOverride {
+    pub path_prefix: String,
+    pub requests_per_window: u64,
+    pub window_secs: u64,
 }
 
 impl AppConfig {

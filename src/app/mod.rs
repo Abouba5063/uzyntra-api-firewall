@@ -62,10 +62,16 @@ pub fn start_background_tasks(state: AppState) {
 }
 
 pub fn build_router(state: AppState) -> Router {
-    let admin_router = Router::new()
+    let public_router = Router::new()
         .route("/", get(control_plane::root))
         .route("/healthz", get(control_plane::healthz))
         .route("/readyz", get(control_plane::readyz))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            core::request_context_middleware,
+        ));
+
+    let admin_router = Router::new()
         .route("/v1/admin/config", get(control_plane::get_config))
         .route(
             "/v1/admin/recommendations/demo",
@@ -91,6 +97,14 @@ pub fn build_router(state: AppState) -> Router {
             "/v1/admin/mitigations/unblock/{ip}",
             post(control_plane::unblock_ip),
         )
+        .route(
+            "/v1/admin/events/recent",
+            get(control_plane::recent_events),
+        )
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            core::admin_auth_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             core::request_context_middleware,
@@ -108,6 +122,7 @@ pub fn build_router(state: AppState) -> Router {
         ));
 
     Router::new()
+        .merge(public_router)
         .merge(admin_router)
         .merge(proxy_router)
         .with_state(state)
