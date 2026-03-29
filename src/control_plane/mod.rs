@@ -2,17 +2,16 @@ use std::{collections::HashMap, net::IpAddr};
 
 use axum::{
     extract::{Path, Query, State},
+    http::HeaderMap,
     Json,
 };
-use serde::Deserialize;
+use chrono::Utc;
 use serde_json::{json, Value};
 
-use crate::{mitigation, telemetry, types::AppState};
-
-#[derive(Debug, Deserialize)]
-pub struct RecentEventsQuery {
-    pub limit: Option<usize>,
-}
+use crate::{
+    mitigation, storage,
+    types::{AdminAudit, AppState, AuditSearchFilters, EventSearchFilters},
+};
 
 pub async fn root() -> Json<Value> {
     Json(json!({
@@ -43,6 +42,7 @@ pub async fn get_config(State(state): State<AppState>) -> Json<Value> {
         "proxy": state.config.proxy,
         "security": state.config.security,
         "telemetry": state.config.telemetry,
+        "storage": state.config.storage,
         "auth": {
             "enabled": state.config.auth.enabled,
             "header_name": state.config.auth.header_name,
@@ -149,10 +149,32 @@ pub async fn get_reputation(
 pub async fn unblock_ip(
     State(state): State<AppState>,
     Path(ip): Path<String>,
+    headers: HeaderMap,
 ) -> Json<Value> {
+    let actor = headers
+        .get("x-admin-actor")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("admin")
+        .to_string();
+
     match ip.parse::<IpAddr>() {
         Ok(parsed) => {
             let removed = state.mitigation_store.unblock_ip(parsed);
+
+            let audit = AdminAudit {
+                timestamp: Utc::now(),
+                actor,
+                action: "unblock_ip".to_string(),
+                target: parsed.to_string(),
+                result: if removed { "removed" } else { "not_found" }.to_string(),
+                details: "manual unblock via admin API".to_string(),
+            };
+
+            if let Err(err) = storage::persist_admin_audit(&state.config.storage.sqlite_path, &audit)
+            {
+                tracing::error!(error = %err, "failed to persist admin audit");
+            }
+
             Json(json!({
                 "source_ip": parsed.to_string(),
                 "removed": removed
@@ -166,11 +188,39 @@ pub async fn unblock_ip(
 
 pub async fn recent_events(
     State(state): State<AppState>,
-    Query(query): Query<RecentEventsQuery>,
+    Query(query): Query<EventSearchFilters>,
 ) -> Json<Value> {
-    let limit = query.limit.unwrap_or(20);
+    match storage::query_security_events(&state.config.storage.sqlite_path, &query) {
+        Ok(items) => Json(json!({
+            "count": items.len(),
+            "items": items
+        })),
+        Err(err) => Json(json!({
+            "error": err.to_string()
+        })),
+    }
+}
 
-    match telemetry::read_recent_events(&state.config.telemetry.security_event_log_path, limit) {
+pub async fn search_events(
+    State(state): State<AppState>,
+    Query(query): Query<EventSearchFilters>,
+) -> Json<Value> {
+    match storage::query_security_events(&state.config.storage.sqlite_path, &query) {
+        Ok(items) => Json(json!({
+            "count": items.len(),
+            "items": items
+        })),
+        Err(err) => Json(json!({
+            "error": err.to_string()
+        })),
+    }
+}
+
+pub async fn recent_audits(
+    State(state): State<AppState>,
+    Query(query): Query<AuditSearchFilters>,
+) -> Json<Value> {
+    match storage::query_admin_audits(&state.config.storage.sqlite_path, &query) {
         Ok(items) => Json(json!({
             "count": items.len(),
             "items": items

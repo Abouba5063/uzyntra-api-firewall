@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use anyhow::Context;
-use api_firewall::{app, config::AppConfig, telemetry};
+use api_firewall::{app, config::AppConfig, storage, telemetry};
 use tokio::net::TcpListener;
 use tracing::info;
 
@@ -9,6 +9,9 @@ use tracing::info;
 async fn main() -> anyhow::Result<()> {
     let config = AppConfig::load().context("failed to load application config")?;
     telemetry::init(&config.telemetry.log_level)?;
+
+    storage::init_db(&config.storage.sqlite_path)
+        .context("failed to initialize SQLite storage")?;
 
     let bind_addr: SocketAddr = config
         .server
@@ -28,6 +31,7 @@ async fn main() -> anyhow::Result<()> {
     info!(
         bind_addr = %bind_addr,
         upstream = %config.proxy.upstream_base_url,
+        sqlite_path = %config.storage.sqlite_path,
         "api firewall starting"
     );
 

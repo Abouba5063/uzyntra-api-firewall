@@ -60,7 +60,7 @@ pub enum AttackClass {
     MissingSecurityHeaders,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Severity {
     Low,
     Medium,
@@ -151,6 +151,38 @@ pub struct OperatorActionCommand {
     pub rationale: String,
     pub reversible: bool,
     pub parameters: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAudit {
+    pub timestamp: DateTime<Utc>,
+    pub actor: String,
+    pub action: String,
+    pub target: String,
+    pub result: String,
+    pub details: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EventSearchFilters {
+    pub source_ip: Option<String>,
+    pub rule_id: Option<String>,
+    pub severity: Option<String>,
+    pub method: Option<String>,
+    pub path_contains: Option<String>,
+    pub since: Option<String>,
+    pub until: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AuditSearchFilters {
+    pub actor: Option<String>,
+    pub action: Option<String>,
+    pub target: Option<String>,
+    pub since: Option<String>,
+    pub until: Option<String>,
+    pub limit: Option<usize>,
 }
 
 pub fn resolve_rule_mode(state: &AppState, path: &str, rule_id: &str) -> RuleMode {

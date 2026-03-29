@@ -7,11 +7,11 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
-    detection, mitigation, policy, rate_limit, telemetry,
+    detection, mitigation, policy, rate_limit, storage, telemetry,
     types::{
         AppState, AuthStatus, DecisionOutcome, RequestContext, SecurityDecision, SecurityEvent,
     },
@@ -181,6 +181,10 @@ fn emit_event(state: &AppState, context: &RequestContext, decision: &SecurityDec
     };
 
     telemetry::emit_security_event(&event, &state.config.telemetry.security_event_log_path);
+
+    if let Err(err) = storage::persist_security_event(&state.config.storage.sqlite_path, &event) {
+        error!(error = %err, "failed to persist security event to SQLite");
+    }
 }
 
 fn evaluate_auth_status(state: &AppState, path: &str, headers: &HeaderMap) -> AuthStatus {

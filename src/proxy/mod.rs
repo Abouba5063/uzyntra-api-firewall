@@ -6,9 +6,9 @@ use axum::{
 use tracing::{error, info};
 
 use crate::{
-    policy, telemetry,
+    policy, storage, telemetry,
     types::{
-        AppState, AttackClass, Finding, FindingEvidence, RequestContext, Severity,
+        AppState, AttackClass, Finding, FindingEvidence, RequestContext, SecurityEvent, Severity,
     },
 };
 
@@ -78,7 +78,7 @@ pub async fn proxy_handler(
     if !response_findings.is_empty() {
         if let Some(ctx) = &context {
             let decision = policy::evaluate_findings(&state, ctx, response_findings.clone());
-            let event = crate::types::SecurityEvent {
+            let event = SecurityEvent {
                 request_id: ctx.request_id.clone(),
                 timestamp: ctx.timestamp,
                 source_ip: ctx.source_ip.to_string(),
@@ -89,6 +89,10 @@ pub async fn proxy_handler(
             };
 
             telemetry::emit_security_event(&event, &state.config.telemetry.security_event_log_path);
+
+            if let Err(err) = storage::persist_security_event(&state.config.storage.sqlite_path, &event) {
+                error!(error = %err, "failed to persist response-side security event to SQLite");
+            }
         }
     }
 

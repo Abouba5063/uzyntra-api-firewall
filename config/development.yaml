@@ -64,6 +64,9 @@ telemetry:
   log_level: "info"
   security_event_log_path: "data/security-events.jsonl"
 
+storage:
+  sqlite_path: "data/api_firewall.db"
+
 auth:
   enabled: true
   header_name: "x-api-key"

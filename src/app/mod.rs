@@ -101,6 +101,14 @@ pub fn build_router(state: AppState) -> Router {
             "/v1/admin/events/recent",
             get(control_plane::recent_events),
         )
+        .route(
+            "/v1/admin/events/search",
+            get(control_plane::search_events),
+        )
+        .route(
+            "/v1/admin/audits/recent",
+            get(control_plane::recent_audits),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             core::admin_auth_middleware,

@@ -10,6 +10,7 @@ pub struct AppConfig {
     pub security: SecurityConfig,
     pub telemetry: TelemetryConfig,
     pub auth: AuthConfig,
+    pub storage: StorageConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +56,11 @@ pub struct RateLimitConfig {
 pub struct TelemetryConfig {
     pub log_level: String,
     pub security_event_log_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageConfig {
+    pub sqlite_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
