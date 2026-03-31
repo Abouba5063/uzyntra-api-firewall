@@ -45,6 +45,21 @@ Built with performance (Rust), usability (Next.js), and security-first principle
 
 ---
 
+## 🏗️ Architecture Overview 
+```
+Client → UZYNTRA Firewall (Rust)
+              ↓
+       Detection Engine
+              ↓
+       Mitigation System
+              ↓
+         Admin API
+              ↓
+        UZYNTRA UI (Next.js)
+```
+
+---
+
 ## 🔗 UI Dashboard
 
 This backend is controlled via:
