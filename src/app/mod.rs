@@ -1,4 +1,5 @@
 use anyhow::Context;
+use tower_http::cors::{Any, CorsLayer};
 use axum::{
     middleware,
     routing::{any, get, post},
@@ -14,7 +15,7 @@ use crate::{
     proxy,
     rate_limit::RateLimiter,
     storage,
-    types::AppState,
+    types::{AppState, LivePolicyState},
 };
 
 pub fn build_state(config: AppConfig) -> anyhow::Result<AppState> {
@@ -40,6 +41,7 @@ pub fn build_state(config: AppConfig) -> anyhow::Result<AppState> {
             config.security.rate_limit.window_secs,
         )),
         mitigation_store: std::sync::Arc::new(TemporaryMitigationStore::default()),
+        policy_state: std::sync::Arc::new(std::sync::RwLock::new(LivePolicyState::from_config(&config))),
         started_at: chrono::Utc::now(),
     };
 
@@ -111,6 +113,11 @@ pub fn build_public_router(state: AppState) -> Router {
 }
 
 pub fn build_admin_router(state: AppState) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin("http://localhost:3000".parse::<axum::http::HeaderValue>().unwrap())
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     let live_router = if state.config.server.admin_public_health_enabled {
         Router::new().route("/livez", get(control_plane::admin_livez))
     } else {
@@ -122,6 +129,12 @@ pub fn build_admin_router(state: AppState) -> Router {
             Router::new()
                 .route("/healthz", get(control_plane::admin_healthz))
                 .route("/v1/admin/config", get(control_plane::get_config))
+                .route("/v1/admin/policy/effective", get(control_plane::effective_policy))
+                .route("/v1/admin/policy/rules/set", post(control_plane::set_global_rule_mode))
+                .route("/v1/admin/policy/routes/upsert", post(control_plane::upsert_route_override))
+                .route("/v1/admin/policy/routes/delete", post(control_plane::delete_route_override))
+                .route("/v1/admin/policy/rate-limits/upsert", post(control_plane::upsert_route_rate_limit))
+                .route("/v1/admin/policy/rate-limits/delete", post(control_plane::delete_route_rate_limit))
                 .route(
                     "/v1/admin/recommendations/demo",
                     get(control_plane::demo_recommendations),
@@ -179,5 +192,6 @@ pub fn build_admin_router(state: AppState) -> Router {
                     core::request_context_middleware,
                 )),
         )
+        .layer(cors)
         .with_state(state)
 }

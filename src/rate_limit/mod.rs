@@ -1,11 +1,10 @@
-use std::{
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 
 use crate::types::{
-    resolve_rule_mode, AppState, AttackClass, Finding, FindingEvidence, RequestContext, Severity,
+    resolve_rate_limit_for_path, resolve_rule_mode, AppState, AttackClass, Finding,
+    FindingEvidence, RequestContext, Severity,
 };
 
 #[derive(Debug, Clone)]
@@ -80,22 +79,4 @@ pub fn evaluate_request(state: &AppState, context: &RequestContext) -> Option<Fi
         }],
         mode: resolve_rule_mode(state, &context.path, "rate_limit.exceeded"),
     })
-}
-
-fn resolve_rate_limit_for_path(state: &AppState, path: &str) -> (String, u64, u64) {
-    for route in &state.config.security.route_rate_limits {
-        if path.starts_with(&route.path_prefix) {
-            return (
-                route.path_prefix.clone(),
-                route.requests_per_window,
-                route.window_secs,
-            );
-        }
-    }
-
-    (
-        "default".to_string(),
-        state.config.security.rate_limit.requests_per_window,
-        state.config.security.rate_limit.window_secs,
-    )
 }

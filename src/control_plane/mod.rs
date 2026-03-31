@@ -9,8 +9,13 @@ use chrono::Utc;
 use serde_json::{json, Value};
 
 use crate::{
+    config::{RoutePolicyOverride, RouteRateLimitOverride},
     mitigation, storage,
-    types::{AdminAudit, AppState, EventSearchFilters, ManualBlockRequest},
+    types::{
+        ok, err, AdminAudit, AppState, DeleteRouteOverrideRequest, DeleteRouteRateLimitRequest,
+        EventSearchFilters, SetGlobalRuleModeRequest, UpsertRouteOverrideRequest,
+        UpsertRouteRateLimitRequest,
+    },
 };
 
 pub async fn root() -> Json<Value> {
@@ -73,6 +78,173 @@ pub async fn get_config(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
+pub async fn effective_policy(State(state): State<AppState>) -> Json<Value> {
+    let guard = state.policy_state.read().expect("policy_state poisoned");
+    Json(json!(ok(json!({
+        "global_rule_modes": guard.global_rule_modes,
+        "route_overrides": guard.route_overrides,
+        "route_rate_limits": guard.route_rate_limits
+    }))))
+}
+
+pub async fn set_global_rule_mode(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<SetGlobalRuleModeRequest>,
+) -> Json<Value> {
+    let actor = actor_from_headers(&headers);
+
+    {
+        let mut guard = state.policy_state.write().expect("policy_state poisoned");
+        guard.global_rule_modes.insert(body.rule_id.clone(), body.mode.clone());
+    }
+
+    audit(
+        &state,
+        actor,
+        "set_global_rule_mode",
+        body.rule_id.clone(),
+        "updated",
+        format!("mode={:?}", body.mode),
+    );
+
+    Json(json!(ok(json!({
+        "rule_id": body.rule_id,
+        "mode": body.mode
+    }))))
+}
+
+pub async fn upsert_route_override(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<UpsertRouteOverrideRequest>,
+) -> Json<Value> {
+    let actor = actor_from_headers(&headers);
+
+    {
+        let mut guard = state.policy_state.write().expect("policy_state poisoned");
+        if let Some(existing) = guard
+            .route_overrides
+            .iter_mut()
+            .find(|r| r.path_prefix == body.path_prefix)
+        {
+            existing.rule_modes = body.rule_modes.clone();
+        } else {
+            guard.route_overrides.push(RoutePolicyOverride {
+                path_prefix: body.path_prefix.clone(),
+                rule_modes: body.rule_modes.clone(),
+            });
+        }
+    }
+
+    audit(
+        &state,
+        actor,
+        "upsert_route_override",
+        body.path_prefix.clone(),
+        "updated",
+        "route override upserted".to_string(),
+    );
+
+    Json(json!(ok(body)))
+}
+
+pub async fn delete_route_override(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DeleteRouteOverrideRequest>,
+) -> Json<Value> {
+    let actor = actor_from_headers(&headers);
+    let removed = {
+        let mut guard = state.policy_state.write().expect("policy_state poisoned");
+        let before = guard.route_overrides.len();
+        guard.route_overrides.retain(|r| r.path_prefix != body.path_prefix);
+        before != guard.route_overrides.len()
+    };
+
+    audit(
+        &state,
+        actor,
+        "delete_route_override",
+        body.path_prefix.clone(),
+        if removed { "removed" } else { "not_found" },
+        "route override delete attempted".to_string(),
+    );
+
+    Json(json!(ok(json!({
+        "path_prefix": body.path_prefix,
+        "removed": removed
+    }))))
+}
+
+pub async fn upsert_route_rate_limit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<UpsertRouteRateLimitRequest>,
+) -> Json<Value> {
+    let actor = actor_from_headers(&headers);
+
+    {
+        let mut guard = state.policy_state.write().expect("policy_state poisoned");
+        if let Some(existing) = guard
+            .route_rate_limits
+            .iter_mut()
+            .find(|r| r.path_prefix == body.path_prefix)
+        {
+            existing.requests_per_window = body.requests_per_window;
+            existing.window_secs = body.window_secs;
+        } else {
+            guard.route_rate_limits.push(RouteRateLimitOverride {
+                path_prefix: body.path_prefix.clone(),
+                requests_per_window: body.requests_per_window,
+                window_secs: body.window_secs,
+            });
+        }
+    }
+
+    audit(
+        &state,
+        actor,
+        "upsert_route_rate_limit",
+        body.path_prefix.clone(),
+        "updated",
+        format!(
+            "requests_per_window={}; window_secs={}",
+            body.requests_per_window, body.window_secs
+        ),
+    );
+
+    Json(json!(ok(body)))
+}
+
+pub async fn delete_route_rate_limit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DeleteRouteRateLimitRequest>,
+) -> Json<Value> {
+    let actor = actor_from_headers(&headers);
+    let removed = {
+        let mut guard = state.policy_state.write().expect("policy_state poisoned");
+        let before = guard.route_rate_limits.len();
+        guard.route_rate_limits.retain(|r| r.path_prefix != body.path_prefix);
+        before != guard.route_rate_limits.len()
+    };
+
+    audit(
+        &state,
+        actor,
+        "delete_route_rate_limit",
+        body.path_prefix.clone(),
+        if removed { "removed" } else { "not_found" },
+        "route rate limit delete attempted".to_string(),
+    );
+
+    Json(json!(ok(json!({
+        "path_prefix": body.path_prefix,
+        "removed": removed
+    }))))
+}
+
 pub async fn demo_recommendations() -> Json<Value> {
     let recommendations = mitigation::demo_recommendations();
     let commands: Vec<_> = recommendations
@@ -80,10 +252,10 @@ pub async fn demo_recommendations() -> Json<Value> {
         .filter_map(mitigation::recommendation_to_command)
         .collect();
 
-    Json(json!({
+    Json(json!(ok(json!({
         "recommendations": recommendations,
         "commands": commands
-    }))
+    }))))
 }
 
 pub async fn demo_one_click_commands() -> Json<Value> {
@@ -97,33 +269,31 @@ pub async fn demo_one_click_commands() -> Json<Value> {
     let mut reset_rep_params = HashMap::new();
     reset_rep_params.insert("source_ip".to_string(), "127.0.0.1".to_string());
 
-    let commands = vec![
-        json!({
-            "kind": "BlockIpTemporary",
-            "title": "Temporarily block source IP",
-            "rationale": "Use for repeated exploit probes.",
-            "reversible": true,
-            "parameters": block_params
-        }),
-        json!({
-            "kind": "UnblockIp",
-            "title": "Remove temporary block",
-            "rationale": "Use when analyst confirms the source should be restored.",
-            "reversible": true,
-            "parameters": unblock_params
-        }),
-        json!({
-            "kind": "ResetReputation",
-            "title": "Reset source reputation",
-            "rationale": "Use after analyst review clears the source.",
-            "reversible": false,
-            "parameters": reset_rep_params
-        }),
-    ];
-
-    Json(json!({
-        "commands": commands
-    }))
+    Json(json!(ok(json!({
+        "commands": [
+            {
+                "kind": "BlockIpTemporary",
+                "title": "Temporarily block source IP",
+                "rationale": "Use for repeated exploit probes.",
+                "reversible": true,
+                "parameters": block_params
+            },
+            {
+                "kind": "UnblockIp",
+                "title": "Remove temporary block",
+                "rationale": "Use when analyst confirms the source should be restored.",
+                "reversible": true,
+                "parameters": unblock_params
+            },
+            {
+                "kind": "ResetReputation",
+                "title": "Reset source reputation",
+                "rationale": "Use after analyst review clears the source.",
+                "reversible": false,
+                "parameters": reset_rep_params
+            }
+        ]
+    }))))
 }
 
 pub async fn list_active_blocks(State(state): State<AppState>) -> Json<Value> {
@@ -143,19 +313,18 @@ pub async fn list_active_blocks(State(state): State<AppState>) -> Json<Value> {
         })
         .collect();
 
-    Json(json!({
+    Json(json!(ok(json!({
         "count": items.len(),
         "items": items
-    }))
+    }))))
 }
 
 pub async fn list_reputations(State(state): State<AppState>) -> Json<Value> {
     let items = state.mitigation_store.list_reputations();
-
-    Json(json!({
+    Json(json!(ok(json!({
         "count": items.len(),
         "items": items
-    }))
+    }))))
 }
 
 pub async fn get_reputation(
@@ -165,11 +334,9 @@ pub async fn get_reputation(
     match ip.parse::<IpAddr>() {
         Ok(parsed) => {
             let rep = state.mitigation_store.get_reputation(parsed);
-            Json(json!({ "item": rep }))
+            Json(json!(ok(json!({ "item": rep }))))
         }
-        Err(_) => Json(json!({
-            "error": "invalid IP address"
-        })),
+        Err(_) => Json(json!(err::<Value>("invalid IP address"))),
     }
 }
 
@@ -178,66 +345,49 @@ pub async fn unblock_ip(
     Path(ip): Path<String>,
     headers: HeaderMap,
 ) -> Json<Value> {
-    let actor = headers
-        .get("x-admin-actor")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("admin")
-        .to_string();
+    let actor = actor_from_headers(&headers);
 
     match ip.parse::<IpAddr>() {
         Ok(parsed) => {
             let removed = state.mitigation_store.unblock_ip(parsed);
 
             if removed {
-                if let Err(err) =
+                if let Err(e) =
                     storage::delete_active_mitigation(&state.config.storage.sqlite_path, &parsed.to_string())
                 {
-                    tracing::error!(error = %err, "failed to delete active mitigation from SQLite");
+                    tracing::error!(error = %e, "failed to delete active mitigation from SQLite");
                 }
             }
 
-            let audit = AdminAudit {
-                timestamp: Utc::now(),
+            audit(
+                &state,
                 actor,
-                action: "unblock_ip".to_string(),
-                target: parsed.to_string(),
-                result: if removed { "removed" } else { "not_found" }.to_string(),
-                details: "manual unblock via admin API".to_string(),
-            };
+                "unblock_ip",
+                parsed.to_string(),
+                if removed { "removed" } else { "not_found" },
+                "manual unblock via admin API".to_string(),
+            );
 
-            if let Err(err) = storage::persist_admin_audit(&state.config.storage.sqlite_path, &audit)
-            {
-                tracing::error!(error = %err, "failed to persist admin audit");
-            }
-
-            Json(json!({
+            Json(json!(ok(json!({
                 "source_ip": parsed.to_string(),
                 "removed": removed
-            }))
+            }))))
         }
-        Err(_) => Json(json!({
-            "error": "invalid IP address"
-        })),
+        Err(_) => Json(json!(err::<Value>("invalid IP address"))),
     }
 }
 
 pub async fn manual_block_ip(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(body): Json<ManualBlockRequest>,
+    Json(body): Json<crate::types::ManualBlockRequest>,
 ) -> Json<Value> {
-    let actor = headers
-        .get("x-admin-actor")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("admin")
-        .to_string();
+    let actor = actor_from_headers(&headers);
 
     let parsed_ip = match body.source_ip.parse::<IpAddr>() {
         Ok(ip) => ip,
         Err(_) => {
-            return Json(json!({
-                "error": "invalid IP address"
-            }));
+            return Json(json!(err::<Value>("invalid IP address")));
         }
     };
 
@@ -248,30 +398,23 @@ pub async fn manual_block_ip(
 
     match mitigation::apply_manual_block(&state, parsed_ip, ttl_secs, reason.clone()) {
         Ok(mit) => {
-            let audit = AdminAudit {
-                timestamp: Utc::now(),
+            audit(
+                &state,
                 actor,
-                action: "manual_block_ip".to_string(),
-                target: parsed_ip.to_string(),
-                result: "applied".to_string(),
-                details: format!("ttl_secs={ttl_secs}; reason={reason}"),
-            };
+                "manual_block_ip",
+                parsed_ip.to_string(),
+                "applied",
+                format!("ttl_secs={ttl_secs}; reason={reason}"),
+            );
 
-            if let Err(err) = storage::persist_admin_audit(&state.config.storage.sqlite_path, &audit)
-            {
-                tracing::error!(error = %err, "failed to persist admin audit");
-            }
-
-            Json(json!({
+            Json(json!(ok(json!({
                 "action_id": mit.action_id,
                 "source_ip": mit.source_ip.to_string(),
                 "expires_at": mit.expires_at,
                 "reason": mit.reason
-            }))
+            }))))
         }
-        Err(err) => Json(json!({
-            "error": err.to_string()
-        })),
+        Err(e) => Json(json!(err::<Value>(e.to_string()))),
     }
 }
 
@@ -280,45 +423,32 @@ pub async fn reset_reputation(
     Path(ip): Path<String>,
     headers: HeaderMap,
 ) -> Json<Value> {
-    let actor = headers
-        .get("x-admin-actor")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("admin")
-        .to_string();
+    let actor = actor_from_headers(&headers);
 
     let parsed = match ip.parse::<IpAddr>() {
         Ok(ip) => ip,
         Err(_) => {
-            return Json(json!({
-                "error": "invalid IP address"
-            }));
+            return Json(json!(err::<Value>("invalid IP address")));
         }
     };
 
     match mitigation::reset_reputation_for_ip(&state, parsed) {
         Ok(removed) => {
-            let audit = AdminAudit {
-                timestamp: Utc::now(),
+            audit(
+                &state,
                 actor,
-                action: "reset_reputation".to_string(),
-                target: parsed.to_string(),
-                result: if removed { "removed" } else { "not_found" }.to_string(),
-                details: "manual reputation reset via admin API".to_string(),
-            };
+                "reset_reputation",
+                parsed.to_string(),
+                if removed { "removed" } else { "not_found" },
+                "manual reputation reset via admin API".to_string(),
+            );
 
-            if let Err(err) = storage::persist_admin_audit(&state.config.storage.sqlite_path, &audit)
-            {
-                tracing::error!(error = %err, "failed to persist admin audit");
-            }
-
-            Json(json!({
+            Json(json!(ok(json!({
                 "source_ip": parsed.to_string(),
                 "removed": removed
-            }))
+            }))))
         }
-        Err(err) => Json(json!({
-            "error": err.to_string()
-        })),
+        Err(e) => Json(json!(err::<Value>(e.to_string()))),
     }
 }
 
@@ -327,15 +457,13 @@ pub async fn recent_events(
     Query(query): Query<EventSearchFilters>,
 ) -> Json<Value> {
     match storage::query_security_events(&state.config.storage.sqlite_path, &query) {
-        Ok(items) => Json(json!({
+        Ok(items) => Json(json!(ok(json!({
             "count": items.len(),
             "limit": query.limit.unwrap_or(20),
             "offset": query.offset.unwrap_or(0),
             "items": items
-        })),
-        Err(err) => Json(json!({
-            "error": err.to_string()
-        })),
+        })))),
+        Err(e) => Json(json!(err::<Value>(e.to_string()))),
     }
 }
 
@@ -344,15 +472,13 @@ pub async fn search_events(
     Query(query): Query<EventSearchFilters>,
 ) -> Json<Value> {
     match storage::query_security_events(&state.config.storage.sqlite_path, &query) {
-        Ok(items) => Json(json!({
+        Ok(items) => Json(json!(ok(json!({
             "count": items.len(),
             "limit": query.limit.unwrap_or(20),
             "offset": query.offset.unwrap_or(0),
             "items": items
-        })),
-        Err(err) => Json(json!({
-            "error": err.to_string()
-        })),
+        })))),
+        Err(e) => Json(json!(err::<Value>(e.to_string()))),
     }
 }
 
@@ -361,21 +487,19 @@ pub async fn recent_audits(
     Query(query): Query<crate::types::AuditSearchFilters>,
 ) -> Json<Value> {
     match storage::query_admin_audits(&state.config.storage.sqlite_path, &query) {
-        Ok(items) => Json(json!({
+        Ok(items) => Json(json!(ok(json!({
             "count": items.len(),
             "limit": query.limit.unwrap_or(20),
             "offset": query.offset.unwrap_or(0),
             "items": items
-        })),
-        Err(err) => Json(json!({
-            "error": err.to_string()
-        })),
+        })))),
+        Err(e) => Json(json!(err::<Value>(e.to_string()))),
     }
 }
 
 pub async fn metrics(State(state): State<AppState>) -> Json<Value> {
     match storage::metrics_snapshot(&state.config.storage.sqlite_path) {
-        Ok(metrics) => Json(json!({
+        Ok(metrics) => Json(json!(ok(json!({
             "public_bind_addr": state.config.server.public_bind_addr,
             "admin_bind_addr": state.config.server.admin_bind_addr,
             "active_temp_blocks": state.mitigation_store.active_block_count(),
@@ -386,9 +510,37 @@ pub async fn metrics(State(state): State<AppState>) -> Json<Value> {
             "blocked_events": metrics.blocked_events,
             "total_audits": metrics.total_audits,
             "latest_rule_ids": metrics.latest_rule_ids
-        })),
-        Err(err) => Json(json!({
-            "error": err.to_string()
-        })),
+        })))),
+        Err(e) => Json(json!(err::<Value>(e.to_string()))),
+    }
+}
+
+fn actor_from_headers(headers: &HeaderMap) -> String {
+    headers
+        .get("x-admin-actor")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("admin")
+        .to_string()
+}
+
+fn audit(
+    state: &AppState,
+    actor: String,
+    action: &str,
+    target: String,
+    result: &str,
+    details: String,
+) {
+    let audit = AdminAudit {
+        timestamp: Utc::now(),
+        actor,
+        action: action.to_string(),
+        target,
+        result: result.to_string(),
+        details,
+    };
+
+    if let Err(e) = storage::persist_admin_audit(&state.config.storage.sqlite_path, &audit) {
+        tracing::error!(error = %e, "failed to persist admin audit");
     }
 }
