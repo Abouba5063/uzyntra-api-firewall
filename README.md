@@ -1,56 +1,57 @@
 # 🛡️ UZYNTRA API Firewall — Rust Security Engine
 
 <p align="center">
-  <img src="docs/assets/UZYNTRA-logo-mark.png" alt="UZYNTRA Logo" width="120"/>
+  <img src="docs/assets/UZYNTRA-logo-mark.png" width="120"/>
 </p>
 
 <p align="center">
-  <b>High-Performance Rust-Based API Firewall & Threat Detection Engine</b>
+  <b>High-Performance API Security Engine for Modern SaaS Systems</b>
 </p>
 
 <p align="center">
-  <a href="https://github.com/UsamaMatrix/uzyntra-api-firewall">
-    <img src="https://img.shields.io/badge/Backend-Rust-orange?style=for-the-badge&logo=rust"/>
-  </a>
-  <a href="https://github.com/UsamaMatrix/uzyntra-ui">
-    <img src="https://img.shields.io/badge/UI-Next.js-black?style=for-the-badge&logo=next.js"/>
-  </a>
+  <img src="https://img.shields.io/badge/Backend-Rust-orange?style=for-the-badge&logo=rust"/>
+  <img src="https://img.shields.io/badge/UI-Next.js-black?style=for-the-badge&logo=next.js"/>
   <img src="https://img.shields.io/badge/Status-Production Ready-success?style=for-the-badge"/>
   <img src="https://img.shields.io/badge/Security-API Firewall-blue?style=for-the-badge"/>
 </p>
+
 <p align="center">
   <img src="https://img.shields.io/badge/contributions-welcome-brightgreen?style=for-the-badge" />
   <img src="https://img.shields.io/badge/PRs-welcome-orange?style=for-the-badge" />
   <img src="https://img.shields.io/badge/open--source-yes-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/CI-passing-brightgreen?style=for-the-badge" />
 </p>
 
 ---
 
 ## 🚀 Overview
 
-**UZYNTRA API Firewall** is a **high-performance Rust-based reverse proxy security engine** designed to:
+**UZYNTRA API Firewall** is a high-performance API security engine that inspects, detects, and mitigates threats in real time through a programmable reverse proxy architecture.
 
-- Inspect incoming API traffic
-- Detect malicious payloads
-- Enforce real-time mitigations
-- Provide full observability via an operator UI
+It enables:
 
-It acts as a **programmable API security layer** similar to:
-
-- OWASP ZAP (automated testing)
-- WAF systems (Cloudflare / ModSecurity)
-- Modern API security platforms
+* 🔍 Deep request inspection
+* 🧠 Intelligent threat detection
+* 🛡️ Real-time mitigation
+* 📊 Full observability via control plane
 
 ---
 
 ## 🚀 Why UZYNTRA?
 
-UZYNTRA is a modern API security platform designed for real-time threat detection, analysis, and response.
-Built with performance (Rust), usability (Next.js), and security-first principles, it provides a complete control plane + data plane architecture for protecting APIs at scale.
+UZYNTRA is a SaaS-ready API security platform combining a Rust-based security engine with a modern control plane.
+
+Built for:
+
+* Real-time threat detection
+* Scalable API protection
+* DevSecOps integration
+* Cloud-native deployment
 
 ---
 
-## 🏗️ Architecture Overview 
+## 🏗️ Architecture Overview
+
 ```
 Client → UZYNTRA Firewall (Rust)
               ↓
@@ -65,80 +66,63 @@ Client → UZYNTRA Firewall (Rust)
 
 ---
 
-## 🔗 UI Dashboard
+## 🔗 UI Control Plane
 
-This backend is controlled via:
-
-👉 **UZYNTRA UI (Operator Console)**  
-https://github.com/UsamaMatrix/uzyntra-ui
+👉 https://github.com/UsamaMatrix/uzyntra-ui
 
 ---
 
 ## ⚡ Core Capabilities
 
-- 🔍 **Deep Request Inspection**
-  - Query, headers, body analysis
-  - Pattern-based + heuristic detection
-
-- 🧠 **Attack Detection Engine**
-  - SQL Injection (basic detection)
-  - Suspicious payload classification
-  - Extensible rule system
-
-- 🛡️ **Active Mitigation System**
-  - IP blocking
-  - Temporary bans (TTL-based)
-  - Manual analyst actions
-
-- 📊 **Security Telemetry**
-  - Event logging
-  - Metrics tracking
-  - Audit trail generation
-
-- ⚙️ **Policy Control**
-  - Rule modes (detect / block)
-  - Route-specific overrides
-  - Rate limiting
-
-- ⚡ **High Performance**
-  - Built with async Rust
-  - Tokio runtime
-  - Low-latency proxying
+* 🔍 Deep Request Inspection (headers, body, query)
+* 🧠 Attack Detection Engine (pattern + heuristic)
+* 🛡️ Active Mitigation (IP block, TTL bans)
+* 📊 Security Telemetry (events, metrics, logs)
+* ⚙️ Policy Control (rules, rate limiting)
+* ⚡ High Performance (async Rust, low latency)
 
 ---
 
-## 🎬 Engine Concept (GIF)
+## 📡 Structured Logging (SIEM Ready)
 
-<p align="center">
-  <img src="https://media.giphy.com/media/LmNwrBhejkK9EFP504/giphy.gif" width="700"/>
-</p>
+* JSON-formatted logs
+* Includes IP, route, severity, attack type
+* Compatible with ELK, Splunk, Datadog
+
+```json
+{
+  "ip": "192.168.1.1",
+  "route": "/api/login",
+  "attack": "SQL Injection",
+  "severity": "critical",
+  "action": "blocked"
+}
+```
 
 ---
 
-## 📸 API & System Screenshots
+## 🐳 Docker Support
 
-### 📊 Metrics API
-![Metrics](docs/screenshots/01-admin-metrics-api.png)
+```bash
+docker build -t uzyntra-firewall .
+docker run -p 8080:8080 -p 9090:9090 uzyntra-firewall
+```
 
-### 🔍 Events API Response
-![Events](docs/screenshots/02-events-api-response.png)
+---
 
-### 🛡️ Mitigations API
-![Mitigations](docs/screenshots/03-mitigations-api-response.png)
+## ⚙️ CI/CD
 
-### ⚙️ Policy API
-![Policy](docs/screenshots/04-policy-api-response.png)
+Automated build & test pipeline using GitHub Actions.
 
 ---
 
 ## 🧰 Tech Stack
 
-- 🦀 Rust (Stable)
-- ⚡ Tokio (async runtime)
-- 🌐 Axum (web framework)
-- 🔗 Reqwest (HTTP client)
-- 📦 Serde (serialization)
-- 🧠 Custom security engine
+* Rust
+* Tokio
+* Axum
+* Reqwest
+* Serde
 
 ---
 
@@ -148,11 +132,11 @@ https://github.com/UsamaMatrix/uzyntra-ui
 git clone https://github.com/UsamaMatrix/uzyntra-api-firewall.git
 cd uzyntra-api-firewall
 cargo build
-````
+```
 
 ---
 
-## ▶️ Running the Server
+## ▶️ Running
 
 ```bash
 cargo run
@@ -160,20 +144,16 @@ cargo run
 
 ---
 
-## 🌐 Default Endpoints
+## 🌐 Endpoints
 
-| Service      | URL                                                            |
-| ------------ | -------------------------------------------------------------- |
-| Proxy        | [http://127.0.0.1:8080](http://127.0.0.1:8080)                 |
-| Admin API    | [http://127.0.0.1:9090](http://127.0.0.1:9090)                 |
-| Health Check | [http://127.0.0.1:8080/healthz](http://127.0.0.1:8080/healthz) |
-| Readiness    | [http://127.0.0.1:8080/readyz](http://127.0.0.1:8080/readyz)   |
+| Service   | URL                   |
+| --------- | --------------------- |
+| Proxy     | http://127.0.0.1:8080 |
+| Admin API | http://127.0.0.1:9090 |
 
 ---
 
-## 🔐 Admin Authentication
-
-All admin endpoints require:
+## 🔐 Authentication
 
 ```http
 x-admin-token: dev-admin-token-1
@@ -181,190 +161,74 @@ x-admin-token: dev-admin-token-1
 
 ---
 
-## 🔍 Example Requests
+## 🧠 Detection Model
 
-### Get Metrics
-
-```bash
-curl http://127.0.0.1:9090/v1/admin/metrics \
-  -H "x-admin-token: dev-admin-token-1"
-```
-
----
-
-### Get Events
-
-```bash
-curl http://127.0.0.1:9090/v1/admin/events \
-  -H "x-admin-token: dev-admin-token-1"
-```
-
----
-
-### Block IP
-
-```bash
-curl -X POST http://127.0.0.1:9090/v1/admin/mitigations/block \
-  -H "x-admin-token: dev-admin-token-1" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ip": "192.168.1.1",
-    "reason": "manual block",
-    "ttl_seconds": 600
-  }'
-```
-
----
-
-## 📁 Project Structure
-
-```text
-src/
- ├── main.rs                 # Entry point
- ├── config/                # Config loader
- ├── proxy/                 # Reverse proxy logic
- ├── detection/             # Attack detection engine
- ├── mitigation/            # Blocking & enforcement
- ├── telemetry/             # Metrics & logging
- ├── admin/                 # Admin API routes
- ├── policy/                # Rule management
- └── models/                # Shared data structures
-```
-
----
-
-## 🧠 Detection Engine (Concept)
-
-* Pattern matching (e.g., SQLi keywords)
+* Pattern matching
 * Request scoring
 * Confidence levels
 * Attack classification
-
-Example detection:
-
-```text
-Payload: "union select 1"
-→ AttackClass: SQL Injection
-→ Severity: Critical
-→ Confidence: 0.91
-```
 
 ---
 
 ## 🛡️ Mitigation Flow
 
-```text
+```
 Request → Inspection → Detection → Decision → Action
-
-If malicious:
-  → Log event
-  → Update reputation
-  → Apply block (if needed)
 ```
 
 ---
 
-## ⚙️ Configuration
-
-Located in:
-
-```text
-config/development.yaml
-```
-
-You can configure:
-
-* upstream target
-* ports
-* rule modes
-* rate limits
-
----
-
-## 🧪 Testing Security
-
-Try:
+## 🧪 Testing
 
 ```bash
 curl -X POST http://127.0.0.1:8080/proxy/test \
   -d "union select password from users"
 ```
 
-Expected result:
-
-```text
-403 Forbidden
-Request rejected by security policy
-```
-
 ---
 
 ## 🧭 Roadmap
 
-* 🔐 JWT Authentication
-* 📊 Advanced analytics
-* 🧠 ML-based detection
-* 🌐 SaaS multi-tenant system
-* 🔄 Distributed architecture
-* 📡 Real-time alerting
-
----
-
-## 🤝 Contribution
-
-PRs and ideas are welcome.
+* JWT Authentication
+* ML-based detection
+* Distributed architecture
+* Multi-tenant SaaS
+* Real-time alerts
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions from the community!
+We welcome contributions!
 
-### 🟢 Good First Issues
-If you're new, start with:
-
-- Improve detection rules (backend)
-- Add new UI components (frontend)
-- Enhance logging / telemetry
-- Improve documentation
-
-Check the **issues tab** for tasks labeled `good first issue`.
+* Check issues labeled `good first issue`
+* Submit PRs
+* Improve detection or performance
 
 ---
 
-### 💡 How to contribute
+## 💼 Use Cases
 
-1. Fork the repository  
-2. Create a feature branch  
-3. Commit your changes  
-4. Open a Pull Request  
+* API Security Platforms
+* Reverse Proxy Security
+* DevSecOps Pipelines
+* SaaS Backend Protection
 
 ---
 
 ## 👨‍💻 Author
 
-**[Muhammad Usama](https://www.linkedin.com/in/usamamatrix/)**
-Cyber Security Analyst | Rust Backend Engineer
+Muhammad Usama
+Cyber Security Analyst | Rust Engineer
 
 ---
 
 ## ⭐ Support
 
-If you like this project:
-
-* ⭐ Star it
-* 🚀 Share it
-* 🛠️ Build on it
-
----
-
-## 🔗 Related Repository
-
-👉 UI Console:
-[https://github.com/UsamaMatrix/uzyntra-ui](https://github.com/UsamaMatrix/uzyntra-ui)
+Give a ⭐ if you like the project
 
 ---
 
 ## 🛡️ UZYNTRA
 
-> *Observe. Detect. Control. Defend.*
+> Observe. Detect. Control. Defend.
