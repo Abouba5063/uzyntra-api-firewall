@@ -38,6 +38,13 @@ It acts as a **programmable API security layer** similar to:
 
 ---
 
+## 🚀 Why UZYNTRA?
+
+UZYNTRA is a modern API security platform designed for real-time threat detection, analysis, and response.
+Built with performance (Rust), usability (Next.js), and security-first principles, it provides a complete control plane + data plane architecture for protecting APIs at scale.
+
+---
+
 ## 🔗 UI Dashboard
 
 This backend is controlled via:
