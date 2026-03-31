@@ -101,6 +101,30 @@ Client → UZYNTRA Firewall (Rust)
 
 ---
 
+## 🎬 Engine Concept (GIF)
+
+<p align="center">
+  <img src="https://media.giphy.com/media/LmNwrBhejkK9EFP504/giphy.gif" width="700"/>
+</p>
+
+---
+
+## 📸 API & System Screenshots
+
+### 📊 Metrics API
+![Metrics](docs/screenshots/01-admin-metrics-api.png)
+
+### 🔍 Events API Response
+![Events](docs/screenshots/02-events-api-response.png)
+
+### 🛡️ Mitigations API
+![Mitigations](docs/screenshots/03-mitigations-api-response.png)
+
+### ⚙️ Policy API
+![Policy](docs/screenshots/04-policy-api-response.png)
+
+---
+
 ## 🐳 Docker Support
 
 ```bash
