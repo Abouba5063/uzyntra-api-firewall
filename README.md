@@ -242,8 +242,8 @@ We welcome contributions!
 
 ## 👨‍💻 Author
 
-Muhammad Usama
-Cyber Security Analyst | Rust Engineer
+[Muhammad Usama](https://www.linkedin.com/in/usamamatrix/)
+Cyber Security Analyst & Rust Engineer
 
 ---
 
